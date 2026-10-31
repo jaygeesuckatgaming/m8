@@ -19,6 +19,7 @@
 /m8/target/
 !/games/
 !/start-stt.ps1
+!/start-m8.bat
 
 # Never commit disc images
 *.iso
