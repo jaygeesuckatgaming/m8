@@ -7,12 +7,14 @@ name = "Kevin"
 persona = "examples/kevin"
 # The voice: a server with Breeze TTS 2's API (start-breeze.ps1), cloning this WAV (its
 # transcript is the .txt beside it), told how to say each line.
-voice_server = "http://127.0.0.1:7860"
+voice_server = "http://127.0.0.1:8091"
 voice_reference = "voices/soldier.wav"
 # Fixed noise seed, so every line comes out in the same voice.
 voice_seed = 42
 
 [mic]
+# Pick the microphone by name (case-insensitive); unset uses Windows' default.
+device = "Voicemeeter Out B1 (VB-Audio Voicemeeter VAIO)"
 # Talk over the mate to cut it off (use headphones, or it can hear itself through speakers).
 barge_in = true
 # Only used when barge_in = false: ignore the mic entirely while the mate is talking.
@@ -27,15 +29,17 @@ save_recordings = false
 [stt]
 # Speech to text: an OpenAI-style /v1/audio/transcriptions (start-stt.ps1 runs Parakeet behind
 # one). `model = "..."` is sent along, for servers that want one.
-url = "http://127.0.0.1:8083/v1/audio/transcriptions"
+url = "http://127.0.0.1:13310/v1/audio/transcriptions"
+model = "whisper-1"
 
 [kev]
 # The decision model: llama.cpp's /v1/systemone (start-kev.ps1).
-url = "http://127.0.0.1:8080/v1/systemone"
+url = "http://127.0.0.1:5002/v1/systemone"
 
 [llm]
 # The LLM: an OpenAI-style /v1/chat/completions (start-chat.ps1).
-url = "http://127.0.0.1:8081/v1/chat/completions"
+url = "http://127.0.0.1:11434/v1/chat/completions"
+model = "gemma3:4b-it-qat"
 temperature = 1.0
 
 [models]

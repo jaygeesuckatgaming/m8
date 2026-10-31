@@ -588,6 +588,9 @@ impl Brain {
             "temperature": self.cfg.llm.temperature,
             "stream": false,
         });
+        if let Some(model) = &self.cfg.llm.model {
+            request["model"] = json!(model);
+        }
         if choose {
             let spots: Vec<u64> = std::iter::once(0).chain(view.spots.iter().filter_map(|s| s["id"].as_u64())).collect();
             request["response_format"] = json!({"type": "json_schema", "json_schema": {"name": "spot", "schema": {
@@ -667,7 +670,10 @@ impl Brain {
         let messages = self.messages();
         let start = Instant::now();
         let generation = self.speaking.generation();
-        let request = json!({"messages": messages, "temperature": self.cfg.llm.temperature, "stream": true});
+        let mut request = json!({"messages": messages, "temperature": self.cfg.llm.temperature, "stream": true});
+        if let Some(model) = &self.cfg.llm.model {
+            request["model"] = json!(model);
+        }
         let resp = self.agent.post(&self.cfg.llm.url).send_json(&request)?;
         // (he's talking from here until speak.rs has voiced the End below: always sent)
         self.speaking.begin_line();

@@ -248,7 +248,24 @@ impl Listener {
 /// speaking, the mate is cut off (queued audio in the game, pending TTS and the LLM reply).
 pub fn run(cfg: Config, transcriber: Transcriber, speaking: Speaking, link: GameLink, out: Sender<String>) -> Result<()> {
     let host = cpal::default_host();
-    let device = host.default_input_device().ok_or_else(|| anyhow!("no microphone found"))?;
+    let device = match cfg.mic.device.as_deref() {
+        Some(wanted) if !wanted.is_empty() => {
+            let needle = wanted.to_lowercase();
+            host.input_devices()
+                .ok()
+                .and_then(|mut devices| {
+                    devices.find(|device| {
+                        device
+                            .name()
+                            .map(|name| name.to_lowercase().contains(&needle))
+                            .unwrap_or(false)
+                    })
+                })
+                .or_else(|| host.default_input_device())
+                .ok_or_else(|| anyhow!("no microphone matching '{wanted}' and no default"))?
+        }
+        _ => host.default_input_device().ok_or_else(|| anyhow!("no microphone found"))?,
+    };
     let supported = device.default_input_config()?;
     let mic_rate = supported.sample_rate().0 as i32;
     println!(
