@@ -588,7 +588,10 @@ impl Brain {
             "temperature": self.cfg.llm.temperature,
             "stream": false,
         });
-        if let Some(model) = &self.cfg.llm.model {
+        let vision_model = self.cfg.llm.vision_model.as_deref()
+            .filter(|model| !model.trim().is_empty())
+            .or(self.cfg.llm.model.as_deref());
+        if let Some(model) = vision_model {
             request["model"] = json!(model);
         }
         if choose {

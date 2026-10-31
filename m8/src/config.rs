@@ -68,6 +68,9 @@ pub struct LlmConfig {
     /// llama.cpp ignores this; OpenAI-compatible servers (Ollama, vLLM) need it.
     #[serde(default)]
     pub model: Option<String>,
+    /// Optional separate model for `Brain::look` (the mate's eyes); empty uses `model`.
+    #[serde(default)]
+    pub vision_model: Option<String>,
     pub temperature: f32,
 }
 

@@ -40,6 +40,8 @@ url = "http://127.0.0.1:5002/v1/systemone"
 # The LLM: an OpenAI-style /v1/chat/completions (start-chat.ps1).
 url = "http://127.0.0.1:11434/v1/chat/completions"
 model = "gemma3:4b-it-qat"
+# Optional model for Kevin's look (Brain::look); empty uses `model`.
+vision_model = "gemma3:4b-it-qat"
 temperature = 1.0
 
 [models]
