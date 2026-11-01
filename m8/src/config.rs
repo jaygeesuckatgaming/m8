@@ -75,6 +75,10 @@ pub struct LlmConfig {
     #[serde(default)]
     pub vision_model: Option<String>,
     pub temperature: f32,
+    /// The longest a spoken reply may get, in tokens (about 3-4 characters each). 50 cut
+    /// long, sassy lines off mid-word.
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
 }
 
 #[derive(Deserialize, Clone)]
@@ -145,6 +149,10 @@ impl Config {
 
 fn yes() -> bool {
     true
+}
+
+fn default_max_tokens() -> u32 {
+    200
 }
 
 /// sherpa-onnx wants paths as `String`s.

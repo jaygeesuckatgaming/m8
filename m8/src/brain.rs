@@ -870,7 +870,8 @@ impl Brain {
         let messages = self.messages();
         let start = Instant::now();
         let generation = self.speaking.generation();
-        let mut request = json!({"messages": messages, "temperature": self.cfg.llm.temperature, "stream": true, "max_tokens": 50});
+        let mut request = json!({"messages": messages, "temperature": self.cfg.llm.temperature, "stream": true,
+                                 "max_tokens": self.cfg.llm.max_tokens});
         if let Some(model) = &self.cfg.llm.model {
             request["model"] = json!(model);
         }

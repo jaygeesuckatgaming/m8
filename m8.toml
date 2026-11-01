@@ -13,7 +13,7 @@ voice_seed = 42
 
 [mic]
 # Pick the microphone by name (case-insensitive); unset uses Windows' default.
-device = "Microphone (Yeti Stereo Microphone)"
+device = "Voicemeeter Out B1 (VB-Audio Voicemeeter VAIO)"
 barge_in = true
 mute_while_speaking = true
 vad_threshold = 0.5
@@ -33,8 +33,11 @@ url = "http://127.0.0.1:5002/v1/systemone"
 # The LLM and eyes: Ollama, OpenAI-style.
 url = "http://192.168.137.129.:11434/v1/chat/completions"
 model = "gemma3-4b-ctx:latest"
-vision_model = "gemma3:4b-it-qat"
+vision_model = ""
 temperature = 1.0
+# The longest a spoken reply may get, in tokens (about 3-4 characters each). The
+# persona likes long lines; 50 cut them off mid-word.
+max_tokens = 200
 
 [models]
 # Silero VAD, which runs in m8: it finds where speech starts and ends in the mic's audio.
