@@ -43,6 +43,8 @@ pub struct GameLink {
     speech_cooldown_ms: Arc<AtomicU64>,
     /// The view last asked for, once it comes.
     view: Arc<(Mutex<Option<View>>, Condvar)>,
+    /// Counts game connections, so an old link's end can't end a new session.
+    connections: Arc<AtomicU64>,
     hello: Value,
 }
 
@@ -57,6 +59,7 @@ impl GameLink {
             mic_muted: Arc::new(AtomicBool::new(false)),
             speech_cooldown_ms: Arc::new(AtomicU64::new(5000)),
             view: Arc::new((Mutex::new(None), Condvar::new())),
+            connections: Arc::new(AtomicU64::new(0)),
             hello,
         };
 
@@ -70,10 +73,11 @@ impl GameLink {
                 accept_link.send_json(&accept_link.hello);
                 // (a play session starts: the brain writes it to memory and recalls the past)
                 let _ = events.send(json!({"type": "connected"}));
+                let connection = accept_link.connections.fetch_add(1, Ordering::SeqCst) + 1;
 
                 let read_link = accept_link.clone();
                 let (events, hearing) = (events.clone(), hearing.clone());
-                std::thread::spawn(move || read_link.read_loop(reader, events, hearing));
+                std::thread::spawn(move || read_link.read_loop(reader, events, hearing, connection));
             }
         });
         Ok(link)
@@ -118,7 +122,7 @@ impl GameLink {
         }
     }
 
-    fn read_loop(&self, stream: TcpStream, events: Sender<Value>, hearing: Sender<Heard>) {
+    fn read_loop(&self, stream: TcpStream, events: Sender<Value>, hearing: Sender<Heard>, connection: u64) {
         let mut reader = BufReader::new(stream);
         loop {
             let mut header = [0u8; 5];
@@ -182,6 +186,9 @@ impl GameLink {
             }
         }
         println!("[game] game disconnected");
-        let _ = events.send(json!({"type": "disconnected"}));
+        // (only if a newer connection hasn't taken its place: its end is the session's)
+        if self.connections.load(Ordering::SeqCst) == connection {
+            let _ = events.send(json!({"type": "disconnected"}));
+        }
     }
 }
