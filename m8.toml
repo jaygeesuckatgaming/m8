@@ -3,8 +3,8 @@
 # Laya decides, Ollama talks and sees, StyleTTS2 speaks, Whisper hears.
 
 [mate]
-name = "Kevin"
-# The persona: its prompts and level stories (examples/kevin is Kevin, the Halo CE teammate).
+name = "Gem"
+# The persona: its prompts and level stories (examples/kevin holds Gem's prompts).
 persona = "examples/kevin"
 # The voice: our StyleTTS2 adapter speaks Breeze TTS 2's API (start_m8_styletts2).
 voice_server = "http://127.0.0.1:8091"

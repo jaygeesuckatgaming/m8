@@ -58,8 +58,8 @@
 </main>
 <script>
 const EVENTS = [
-  "Enemies came into view: a grunt ahead, an elite ahead.", "Kevin killed a grunt.", "{player} killed an elite.",
-  "Kevin's shields broke.", "Kevin is badly hurt.", "{player} shot Kevin.", "{player} picked up a shotgun.",
+  "Enemies came into view: a grunt ahead, an elite ahead.", "Gem killed a grunt.", "{player} killed an elite.",
+  "Gem's shields broke.", "Gem is badly hurt.", "{player} shot Gem.", "{player} picked up a shotgun.",
   "It's been quiet for a while.", "Cortana over the radio: \"Chief, I'm picking up a distress beacon.\"",
   "New objective: Find the survivors.", "{player} died.",
 ];
@@ -68,7 +68,7 @@ const EXAMPLE_STATE = {
   player_name: "Chief",
   level: "a30",
   in_combat: true,
-  state: "Kevin: unhurt, shields full, holding an assault rifle (52 rounds loaded, spare ammo), a pistol on his back (12 rounds loaded, spare ammo), 2 frag and 0 plasma grenades, following {player}. {player}: close by ahead, unhurt, shields full. Enemies: elite close (9 m) ahead, in sight, unhurt, shields full; grunt at mid range (16 m) to the left, in sight, unhurt.",
+  state: "Gem: unhurt, shields full, holding an assault rifle (52 rounds loaded, spare ammo), a pistol on his back (12 rounds loaded, spare ammo), 2 frag and 0 plasma grenades, following {player}. {player}: close by ahead, unhurt, shields full. Enemies: elite close (9 m) ahead, in sight, unhurt, shields full; grunt at mid range (16 m) to the left, in sight, unhurt.",
   actions: [
     { name: "stay", description: "stays where he is" },
     { name: "shoot", description: "shoots at an enemy", options: { "1": "elite close (9 m) ahead, in sight, unhurt, shields full", "2": "grunt at mid range (16 m) to the left, in sight, unhurt" } },
