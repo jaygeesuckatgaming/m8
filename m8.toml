@@ -31,7 +31,7 @@ url = "http://127.0.0.1:5002/v1/systemone"
 
 [llm]
 # The LLM and eyes: Ollama, OpenAI-style.
-url = "http://127.0.0.1:11434/v1/chat/completions"
+url = "http://192.168.137.129.:11434/v1/chat/completions"
 model = "gemma3-4b-ctx:latest"
 vision_model = "gemma3:4b-it-qat"
 temperature = 1.0
@@ -39,6 +39,15 @@ temperature = 1.0
 [models]
 # Silero VAD, which runs in m8: it finds where speech starts and ends in the mic's audio.
 silero_vad = "models/silero_vad.onnx"
+
+[memory]
+# What the mate remembers between games: the Gem system's Cognee server, the same memory
+# the stream's Gem has. Entries read "[halo] Gem: ..." beside the chat's.
+url = "http://127.0.0.1:8011"
+enabled = true
+source = "halo"
+# Seconds of notable events gathered into one entry (the server's writes are serialised).
+flush_seconds = 30
 
 [game]
 port = 47800

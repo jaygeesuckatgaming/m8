@@ -11,6 +11,9 @@ pub struct Config {
     pub llm: LlmConfig,
     pub models: ModelsConfig,
     pub game: GameConfig,
+    /// What the mate remembers between games; off if the section is missing.
+    #[serde(default)]
+    pub memory: MemoryConfig,
     /// Folder the config file lives in; relative paths are resolved against it.
     #[serde(skip)]
     pub base_dir: PathBuf,
@@ -83,6 +86,37 @@ pub struct ModelsConfig {
 #[derive(Deserialize, Clone)]
 pub struct GameConfig {
     pub port: u16,
+}
+
+/// The memory between games: the Gem system's Cognee server (its HTTP API, :8011), the same
+/// memory the stream's Gem has. Its entries read "[halo] Gem: ..." beside the chat's.
+#[derive(Deserialize, Clone)]
+pub struct MemoryConfig {
+    /// The Cognee server; unset turns memory off.
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// The tag the entries carry.
+    #[serde(default = "halo_source")]
+    pub source: String,
+    /// How many seconds of notable events are gathered into one entry.
+    #[serde(default = "default_flush_seconds")]
+    pub flush_seconds: u64,
+}
+
+impl Default for MemoryConfig {
+    fn default() -> Self {
+        Self { url: None, enabled: true, source: halo_source(), flush_seconds: default_flush_seconds() }
+    }
+}
+
+fn halo_source() -> String {
+    "halo".to_string()
+}
+
+fn default_flush_seconds() -> u64 {
+    30
 }
 
 impl Config {

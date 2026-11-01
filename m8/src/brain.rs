@@ -16,11 +16,13 @@
 
 use crate::config::Config;
 use crate::link::GameLink;
+use crate::memory::RemoteMemory;
 use crate::picture;
 use crate::site::{PromptFile, Trace};
 use crate::speak::SpeechJob;
 use crate::Speaking;
 use anyhow::Result;
+use chrono::Local;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader};
@@ -40,6 +42,11 @@ pub enum Input {
     Loaded(String),
     /// A summary of the feed's oldest lines is ready.
     Summary { memory: u64, folded: usize, text: String },
+    /// A game connected (a play session starts) or went away.
+    Connected,
+    Disconnected,
+    /// What the memory had to say: past sessions, and about the player.
+    Recalled { sessions: Vec<String>, player: Vec<String> },
 }
 
 /// The feed's size, in tokens (counted as 4 characters each): over FEED_TOKENS, at a safe point
@@ -82,6 +89,16 @@ pub struct Brain {
     memory_generation: u64,
     summarizing: bool,
     saves: Vec<(String, Memory)>,
+    /// The memory between games (Cognee), and what it recalled for this session.
+    remote: RemoteMemory,
+    remote_sessions: Vec<String>,
+    remote_player: Vec<String>,
+    /// The notable lines since the last memory entry ("21:14 killed a grunt").
+    journal: Vec<String>,
+    journal_flushed: Instant,
+    /// The level this session reached (from its saves), and whether a game is connected.
+    session_level: String,
+    session_open: bool,
 }
 
 impl Brain {
@@ -101,6 +118,10 @@ impl Brain {
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or_default();
+        let remote = RemoteMemory::new(&cfg.memory);
+        if remote.enabled() {
+            println!("[memory] connected to {}", cfg.memory.url.as_deref().unwrap_or_default());
+        }
         Brain {
             cfg,
             link,
@@ -116,6 +137,13 @@ impl Brain {
             memory_generation: 0,
             summarizing: false,
             saves,
+            remote,
+            remote_sessions: Vec::new(),
+            remote_player: Vec::new(),
+            journal: Vec::new(),
+            journal_flushed: Instant::now(),
+            session_level: String::new(),
+            session_open: false,
         }
     }
 
@@ -168,10 +196,14 @@ impl Brain {
                 Input::Saved(id) => self.on_saved(id),
                 Input::Loaded(id) => self.on_loaded(&id),
                 Input::Summary { memory, folded, text } => self.on_summary(memory, folded, text),
+                Input::Connected => self.on_connected(),
+                Input::Disconnected => self.on_disconnected(),
+                Input::Recalled { sessions, player } => self.on_recalled(sessions, player),
             };
             if let Err(e) = result {
                 eprintln!("[brain] error: {e:#}");
             }
+            self.flush_journal_if_due();
             self.fold_over(if quiet { FEED_TOKENS } else { FEED_MAX_TOKENS });
         }
     }
@@ -190,6 +222,8 @@ impl Brain {
             self.memory.feed.push(text.clone());
             // (and the game's state as it was then: what Kev and the LLM saw of it)
             self.trace.add("event", json!({"text": text, "react": react, "state": self.state()}));
+            // (a story line, or one of the notable things: kept for the session's memory)
+            self.note(&text, !*react);
         }
         if events.iter().any(|(_, react)| *react) {
             self.respond(false)?;
@@ -228,6 +262,12 @@ impl Brain {
         }
         std::fs::write(Self::saves_path(&self.cfg), serde_json::to_string(&self.saves)?)?;
         self.trace.add("event", json!({"text": format!("(the game saved: {id})")}));
+        // (the level it saved at: the first of the save's "level:time" id)
+        let level = id.split(':').next().unwrap_or_default().to_string();
+        if !level.is_empty() && level != self.session_level {
+            self.session_level = level.clone();
+            self.note(&format!("reached level {level}"), false);
+        }
         // (a safe point to fold the feed)
         self.fold_over(FEED_TOKENS);
         Ok(())
@@ -257,6 +297,141 @@ impl Brain {
             self.trace.add("memory", json!({"summary": self.memory.summary, "folded": folded}));
         }
         Ok(())
+    }
+
+    /// A game connected: a play session starts. Its beginning goes into the memory, and what
+    /// the memory knows of past sessions comes back when the server answers (on its own thread:
+    /// the first recall can be slow).
+    fn on_connected(&mut self) -> Result<()> {
+        if self.session_open {
+            return Ok(());
+        }
+        self.session_open = true;
+        self.session_level.clear();
+        self.journal.clear();
+        self.journal_flushed = Instant::now();
+        let level = self.state()["level"].as_str().unwrap_or("unknown").to_string();
+        self.remote.remember(
+            "Gem",
+            &format!(
+                "played Halo: Combat Evolved with {} on {} (session started, level {level})",
+                self.player(),
+                Self::today()
+            ),
+        );
+        let (remote, inputs) = (self.remote.clone(), self.inputs.clone());
+        let (name, player) = (self.cfg.mate.name.clone(), self.player());
+        std::thread::spawn(move || {
+            let sessions = remote.recall(
+                &format!("times {name} played Halo with {player}, what happened, where we got to"),
+                5,
+            );
+            let about = remote.recall(&format!("what do I remember about {player}"), 5);
+            let _ = inputs.send(Input::Recalled { sessions, player: about });
+        });
+        println!("[memory] session started");
+        Ok(())
+    }
+
+    fn on_recalled(&mut self, sessions: Vec<String>, player: Vec<String>) -> Result<()> {
+        if !sessions.is_empty() || !player.is_empty() {
+            println!(
+                "[memory] recalled {} session line(s), {} about {}",
+                sessions.len(),
+                player.len(),
+                self.player()
+            );
+        }
+        self.remote_sessions = sessions;
+        self.remote_player = player;
+        Ok(())
+    }
+
+    /// The game went away: the session's last notable lines and a line about it go into the
+    /// memory, so the stream's Gem remembers the time they played.
+    fn on_disconnected(&mut self) -> Result<()> {
+        if !self.session_open {
+            return Ok(());
+        }
+        self.session_open = false;
+        self.flush_journal();
+        let summary = if self.memory.summary.is_empty() {
+            self.memory.feed.iter().rev().take(10).rev().cloned().collect::<Vec<_>>().join(" ")
+        } else {
+            self.memory.summary.clone()
+        };
+        let summary: String = summary.trim().chars().take(500).collect();
+        let summary = if summary.is_empty() { String::new() } else { format!(" — {summary}") };
+        self.remote.remember(
+            "Gem",
+            &format!("finished playing Halo with {} on {}{}", self.player(), Self::today(), summary),
+        );
+        println!("[memory] session ended");
+        Ok(())
+    }
+
+    /// A notable line goes into the journal, which is written to the memory as one entry (the
+    /// server's writes are serialised, so they're gathered rather than sent one by one).
+    fn note(&mut self, text: &str, story: bool) {
+        if !story && !Self::is_notable(text) {
+            return;
+        }
+        let text = text.trim();
+        if text.is_empty() {
+            return;
+        }
+        self.journal.push(format!("{} {text}", Local::now().format("%H:%M")));
+        // (memory down for a long while: keep the newest, drop the oldest)
+        if self.journal.len() > 500 {
+            self.journal.drain(..100);
+        }
+        if self.journal.len() >= 15 {
+            self.flush_journal();
+        }
+    }
+
+    /// What in the game is worth remembering (the ambience isn't).
+    fn is_notable(text: &str) -> bool {
+        let text = text.to_ascii_lowercase();
+        if text.starts_with("enemies came into view") || text.contains("it's been quiet") {
+            return false;
+        }
+        [
+            "killed", "shields", "badly hurt", "heavy fire", "shot ", "died", "is dead",
+            "picked up", "got in the", "objective",
+        ]
+        .iter()
+        .any(|word| text.contains(word))
+    }
+
+    fn flush_journal_if_due(&mut self) {
+        let wait = Duration::from_secs(self.cfg.memory.flush_seconds.max(1));
+        if !self.journal.is_empty()
+            && (self.journal.len() >= 15 || self.journal_flushed.elapsed() >= wait)
+        {
+            self.flush_journal();
+        }
+    }
+
+    fn flush_journal(&mut self) {
+        if self.journal.is_empty() {
+            return;
+        }
+        let lines = std::mem::take(&mut self.journal);
+        let text = format!(
+            "played Halo with {} on {} — {}",
+            self.player(),
+            Self::today(),
+            lines.join("; ")
+        );
+        self.remote.remember("Gem", &text);
+        self.journal_flushed = Instant::now();
+        self.trace.add("memory", json!({"wrote": text}));
+        println!("[memory] wrote {} notable line(s)", lines.len());
+    }
+
+    fn today() -> String {
+        Local::now().format("%Y-%m-%d").to_string()
     }
 
     /// The feed over `limit` tokens: its oldest lines, down to FEED_FOLDED_TO, are folded into the
@@ -344,6 +519,22 @@ impl Brain {
             std::fs::read_to_string(self.cfg.persona_dir().join("levels").join(format!("{level}.txt"))).ok()
         }) {
             parts.push(self.fill(story.trim()));
+        }
+        if !self.remote_sessions.is_empty() {
+            parts.push(format!(
+                "What {} remembers of past sessions with {}:\n- {}",
+                self.cfg.mate.name,
+                self.player(),
+                self.remote_sessions.join("\n- ")
+            ));
+        }
+        if !self.remote_player.is_empty() {
+            parts.push(format!(
+                "What {} remembers about {}:\n- {}",
+                self.cfg.mate.name,
+                self.player(),
+                self.remote_player.join("\n- ")
+            ));
         }
         if !self.memory.summary.is_empty() {
             parts.push(format!("What {} remembers: {}", self.cfg.mate.name, self.memory.summary));

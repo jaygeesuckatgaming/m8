@@ -68,6 +68,8 @@ impl GameLink {
                 println!("[game] game connected");
                 *accept_link.writer.lock().unwrap() = Some(stream);
                 accept_link.send_json(&accept_link.hello);
+                // (a play session starts: the brain writes it to memory and recalls the past)
+                let _ = events.send(json!({"type": "connected"}));
 
                 let read_link = accept_link.clone();
                 let (events, hearing) = (events.clone(), hearing.clone());
@@ -179,5 +181,7 @@ impl GameLink {
                 _ => {}
             }
         }
+        println!("[game] game disconnected");
+        let _ = events.send(json!({"type": "disconnected"}));
     }
 }

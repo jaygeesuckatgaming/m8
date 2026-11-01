@@ -11,6 +11,7 @@ mod brain;
 mod config;
 mod link;
 mod listen;
+mod memory;
 mod picture;
 mod site;
 mod speak;
@@ -139,6 +140,8 @@ fn main() -> Result<()> {
         for msg in events_rx {
             let text = |key: &str| msg[key].as_str().unwrap_or_default().to_string();
             let input = match msg["type"].as_str() {
+                Some("connected") => brain::Input::Connected,
+                Some("disconnected") => brain::Input::Disconnected,
                 Some("saved") => brain::Input::Saved(text("id")),
                 Some("loaded") => brain::Input::Loaded(text("id")),
                 // (typed in the game by the player, as a game master's line: what models are
