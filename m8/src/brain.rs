@@ -328,10 +328,12 @@ impl Brain {
             .unwrap_or_else(|| "the player".to_string())
     }
 
-    /// The game's text (and the prompts) with the player's name and the game's in place of
-    /// {player} and {game}.
+    /// The game's text (and the prompts) with the player's name, the game's and the mate's in
+    /// place of {player}, {game} and {name}.
     fn fill(&self, text: &str) -> String {
-        text.replace("{player}", &self.player()).replace("{game}", self.state()["game"].as_str().unwrap_or("a game"))
+        text.replace("{player}", &self.player())
+            .replace("{game}", self.state()["game"].as_str().unwrap_or("a game"))
+            .replace("{name}", &self.cfg.mate.name)
     }
 
     /// The level's story so far, as the player knows it (levels/<level>.txt), and what the mate
