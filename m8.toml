@@ -1,41 +1,39 @@
-# m8's config. Paths are relative to this file. Each model is a server m8 calls: point the URLs
-# at your own.
+# m8's config. Paths are relative to this file. Each model is a server m8 calls:
+# point the URLs at your own. This copy uses the Gem system's local services:
+# Laya decides, Ollama talks and sees, StyleTTS2 speaks, Whisper hears.
 
 [mate]
 name = "Kevin"
 # The persona: its prompts and level stories (examples/kevin is Kevin, the Halo CE teammate).
 persona = "examples/kevin"
-# The voice: a server with Breeze TTS 2's API (start-breeze.ps1), cloning this WAV (its
-# transcript is the .txt beside it), told how to say each line.
-voice_server = "http://127.0.0.1:7860"
+# The voice: our StyleTTS2 adapter speaks Breeze TTS 2's API (start_m8_styletts2).
+voice_server = "http://127.0.0.1:8091"
 voice_reference = "voices/soldier.wav"
-# Fixed noise seed, so every line comes out in the same voice.
 voice_seed = 42
 
 [mic]
-# Talk over the mate to cut it off (use headphones, or it can hear itself through speakers).
+# Pick the microphone by name (case-insensitive); unset uses Windows' default.
+device = "Microphone (Yeti Stereo Microphone)"
 barge_in = true
-# Only used when barge_in = false: ignore the mic entirely while the mate is talking.
 mute_while_speaking = true
-# Silero VAD sensitivity (0-1, higher = needs clearer speech).
 vad_threshold = 0.5
-# How long you must pause before your sentence counts as finished.
 end_of_speech_silence = 0.1
-# Save every clip it hears to recordings/ (for debugging recognition).
 save_recordings = false
 
 [stt]
-# Speech to text: an OpenAI-style /v1/audio/transcriptions (start-stt.ps1 runs Parakeet behind
-# one). `model = "..."` is sent along, for servers that want one.
-url = "http://127.0.0.1:8083/v1/audio/transcriptions"
+# Speech to text: the Gem system's Whisper server, OpenAI-style.
+url = "http://127.0.0.1:13310/v1/audio/transcriptions"
+model = "whisper-1"
 
 [kev]
-# The decision model: llama.cpp's /v1/systemone (start-kev.ps1).
-url = "http://127.0.0.1:8080/v1/systemone"
+# The decision model: Laya serves llama.cpp's /v1/systemone shape.
+url = "http://127.0.0.1:5002/v1/systemone"
 
 [llm]
-# The LLM: an OpenAI-style /v1/chat/completions (start-chat.ps1).
-url = "http://127.0.0.1:8081/v1/chat/completions"
+# The LLM and eyes: Ollama, OpenAI-style.
+url = "http://127.0.0.1:11434/v1/chat/completions"
+model = "gemma3-4b-ctx:latest"
+vision_model = "gemma3:4b-it-qat"
 temperature = 1.0
 
 [models]

@@ -34,6 +34,9 @@ pub struct MateConfig {
 
 #[derive(Deserialize, Clone)]
 pub struct MicConfig {
+    /// Input device name (case-insensitive substring); the system default if unset.
+    #[serde(default)]
+    pub device: Option<String>,
     /// Talking over the mate cuts it off. Takes precedence over `mute_while_speaking`.
     #[serde(default = "yes")]
     pub barge_in: bool,
@@ -62,6 +65,12 @@ pub struct KevConfig {
 #[derive(Deserialize, Clone)]
 pub struct LlmConfig {
     pub url: String,
+    /// llama.cpp ignores this; OpenAI-compatible servers (Ollama, vLLM) need it.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Optional separate model for `Brain::look` (the mate's eyes); empty uses `model`.
+    #[serde(default)]
+    pub vision_model: Option<String>,
     pub temperature: f32,
 }
 

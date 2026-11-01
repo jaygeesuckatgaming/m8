@@ -248,7 +248,24 @@ impl Listener {
 /// speaking, the mate is cut off (queued audio in the game, pending TTS and the LLM reply).
 pub fn run(cfg: Config, transcriber: Transcriber, speaking: Speaking, link: GameLink, out: Sender<String>) -> Result<()> {
     let host = cpal::default_host();
-    let device = host.default_input_device().ok_or_else(|| anyhow!("no microphone found"))?;
+    let device = match cfg.mic.device.as_deref() {
+        Some(wanted) if !wanted.is_empty() => {
+            let needle = wanted.to_lowercase();
+            host.input_devices()
+                .ok()
+                .and_then(|mut devices| {
+                    devices.find(|device| {
+                        device
+                            .name()
+                            .map(|name| name.to_lowercase().contains(&needle))
+                            .unwrap_or(false)
+                    })
+                })
+                .or_else(|| host.default_input_device())
+                .ok_or_else(|| anyhow!("no microphone matching '{wanted}' and no default"))?
+        }
+        _ => host.default_input_device().ok_or_else(|| anyhow!("no microphone found"))?,
+    };
     let supported = device.default_input_config()?;
     let mic_rate = supported.sample_rate().0 as i32;
     println!(
@@ -265,6 +282,8 @@ pub fn run(cfg: Config, transcriber: Transcriber, speaking: Speaking, link: Game
 
     let (barge_in, mute_while_speaking) = (cfg.mic.barge_in, cfg.mic.mute_while_speaking);
     let name = cfg.mate.name.clone();
+    // the file player watches this to stop a line the player talks over
+    let voice_stop = cfg.base_dir.join("voice_stop.txt");
     let mut listener = Listener::new(cfg, transcriber, mic_rate)?;
     for chunk in rx {
         let mate_talking = speaking.is_speaking();
@@ -279,6 +298,11 @@ pub fn run(cfg: Config, transcriber: Transcriber, speaking: Speaking, link: Game
             println!("[mic] you talked over {name}, cutting them off");
             speaking.interrupt();
             link.send_json(&json!({"type": "stop_audio"}));
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0);
+            let _ = std::fs::write(&voice_stop, stamp.to_string());
         }
         for text in heard {
             if out.send(text).is_err() {

@@ -271,7 +271,7 @@ impl Brain {
             folded += 1;
         }
         self.summarizing = true;
-        let (agent, url, name) = (self.agent.clone(), self.cfg.llm.url.clone(), self.cfg.mate.name.clone());
+        let (agent, url, name, model) = (self.agent.clone(), self.cfg.llm.url.clone(), self.cfg.mate.name.clone(), self.cfg.llm.model.clone());
         let (previous, lines) = (self.memory.summary.clone(), self.memory.feed[..folded].join("\n"));
         let (inputs, memory, trace) = (self.inputs.clone(), self.memory_generation, self.trace.clone());
         let temperature = 0.3;
@@ -284,9 +284,13 @@ impl Brain {
                  nothing that isn't above. Leave out small talk that doesn't matter."
             );
             let messages = json!([{"role": "user", "content": request}]);
+            let mut body = json!({"messages": messages, "temperature": temperature});
+            if let Some(model) = &model {
+                body["model"] = json!(model);
+            }
             let reply: Result<Value> = agent
                 .post(&url)
-                .send_json(json!({"messages": messages, "temperature": temperature}))
+                .send_json(body)
                 .map_err(anyhow::Error::from)
                 .and_then(|r| Ok(r.into_json()?));
             let output = reply.as_ref().ok().and_then(|r| r["choices"][0]["message"]["content"].as_str()).map(str::to_string);
@@ -588,6 +592,12 @@ impl Brain {
             "temperature": self.cfg.llm.temperature,
             "stream": false,
         });
+        let vision_model = self.cfg.llm.vision_model.as_deref()
+            .filter(|name| !name.is_empty())
+            .or(self.cfg.llm.model.as_deref());
+        if let Some(model) = vision_model {
+            request["model"] = json!(model);
+        }
         if choose {
             let spots: Vec<u64> = std::iter::once(0).chain(view.spots.iter().filter_map(|s| s["id"].as_u64())).collect();
             request["response_format"] = json!({"type": "json_schema", "json_schema": {"name": "spot", "schema": {
@@ -667,7 +677,10 @@ impl Brain {
         let messages = self.messages();
         let start = Instant::now();
         let generation = self.speaking.generation();
-        let request = json!({"messages": messages, "temperature": self.cfg.llm.temperature, "stream": true});
+        let mut request = json!({"messages": messages, "temperature": self.cfg.llm.temperature, "stream": true, "max_tokens": 50});
+        if let Some(model) = &self.cfg.llm.model {
+            request["model"] = json!(model);
+        }
         let resp = self.agent.post(&self.cfg.llm.url).send_json(&request)?;
         // (he's talking from here until speak.rs has voiced the End below: always sent)
         self.speaking.begin_line();
@@ -677,8 +690,8 @@ impl Brain {
         let mut first_token_ms = Value::Null;
 
         let mut full = String::new();
+        let mut pending = String::new();
         let mut notes = Notes::default();
-        let mut splitter = SentenceSplitter::default();
         // How he says it: the latest "[...]" note, for the voice; each holds until the next.
         let mut how = String::new();
         let mut directions: Vec<String> = Vec::new();
@@ -721,16 +734,8 @@ impl Brain {
                 full.push_str(delta);
                 for piece in notes.push(delta) {
                     match piece {
-                        Piece::Text(text) => {
-                            for sentence in splitter.push(&text) {
-                                speak(sentence, &how);
-                            }
-                        }
+                        Piece::Text(text) => pending.push_str(&text),
                         Piece::Note(note) => {
-                            // (what came before it is said as it was: a note mid-sentence splits it)
-                            if let Some(rest) = splitter.finish() {
-                                speak(rest, &how);
-                            }
                             how = note;
                             directions.push(how.clone());
                         }
@@ -738,9 +743,9 @@ impl Brain {
                 }
             }
         }
-        if let Some(rest) = splitter.finish() {
-            speak(rest, &how);
-        }
+        // the whole line in one go: StyleTTS2 is slower than real time per
+        // request, so sentence-by-sentence left gaps between the sentences
+        speak(pending, &how);
         let _ = self.speech.send(SpeechJob::End(generation));
         // (his turn as he wrote it, every note and paragraph: as the LLM sees its own lines)
         let line = full.trim().to_string();
