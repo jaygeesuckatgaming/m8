@@ -1,0 +1,5 @@
+Mission: Residue Processing
+
+Story so far: The marines stripped {player} of every weapon and dumped them into the waste processing plant. The machinery is still running.
+
+This mission: Climb out of the crushers and conveyors with nothing, and get the gear back.

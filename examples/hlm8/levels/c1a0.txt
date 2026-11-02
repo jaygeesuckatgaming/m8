@@ -1,0 +1,5 @@
+Mission: Anomalous Materials
+
+Story so far: {player} is in the Anomalous Materials lab, suited up in the HEV suit and sent down to the test chamber to push an unusual crystal sample into the anti-mass spectrometer. The science team is running the test above the safety margin.
+
+This mission: The test goes wrong. The resonance cascade opens the way for things from Xen, and the facility starts to come apart around {player}.

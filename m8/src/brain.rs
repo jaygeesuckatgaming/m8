@@ -124,7 +124,7 @@ impl Brain {
         inputs: Sender<Input>,
     ) -> Self {
         let agent = ureq::AgentBuilder::new()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(cfg.llm.timeout_seconds.max(10)))
             .build();
         let saves = std::fs::read_to_string(Self::saves_path(&cfg))
             .ok()
@@ -617,13 +617,13 @@ impl Brain {
     fn context(&self) -> Vec<String> {
         let mut parts = Vec::new();
         if let Some(story) = self.state()["level"].as_str().and_then(|level| {
-            std::fs::read_to_string(
-                self.cfg
-                    .persona_dir()
-                    .join("levels")
-                    .join(format!("{level}.txt")),
-            )
-            .ok()
+            // (a sub-map, c1a0b, falls back to its chapter's, c1a0)
+            let levels = self.cfg.persona_dir().join("levels");
+            let chapter: String = level.chars().take(4).collect();
+
+            std::fs::read_to_string(levels.join(format!("{level}.txt")))
+                .or_else(|_| std::fs::read_to_string(levels.join(format!("{chapter}.txt"))))
+                .ok()
         }) {
             parts.push(self.fill(story.trim()));
         }

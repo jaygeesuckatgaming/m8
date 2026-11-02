@@ -79,6 +79,10 @@ pub struct LlmConfig {
     /// long, sassy lines off mid-word.
     #[serde(default = "default_max_tokens")]
     pub max_tokens: u32,
+    /// How long to wait for the model (it can be cold on a busy server, and loading it can
+    /// take a minute or more).
+    #[serde(default = "default_llm_timeout")]
+    pub timeout_seconds: u64,
 }
 
 #[derive(Deserialize, Clone)]
@@ -164,6 +168,10 @@ fn yes() -> bool {
 
 fn default_max_tokens() -> u32 {
     200
+}
+
+fn default_llm_timeout() -> u64 {
+    180
 }
 
 /// sherpa-onnx wants paths as `String`s.

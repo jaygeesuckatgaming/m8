@@ -1,0 +1,5 @@
+Mission: Xen
+
+Story so far: {player} is on the other side of the teleporter, in the border world Xen. Gravity is weak here, the rocks float, and everything that came through the cascade started here.
+
+This mission: Find a way across Xen and toward whatever is keeping the way open.

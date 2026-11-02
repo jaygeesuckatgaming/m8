@@ -1,0 +1,5 @@
+Mission: Lambda Core
+
+Story so far: The Lambda Complex is the heart of Black Mesa's teleport research, and the only place that can send {player} to Xen to stop the cascade at its source.
+
+This mission: Get the teleporter working and go through.

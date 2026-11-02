@@ -4,8 +4,8 @@
 
 [mate]
 name = "Gem"
-# The persona: its prompts and level stories (examples/kevin holds Gem's prompts).
-persona = "examples/kevin"
+# The persona: its prompts and level stories (examples/hlm8 for Half-Life, examples/kevin for Halo).
+persona = "examples/hlm8"
 # The voice: our StyleTTS2 adapter speaks Breeze TTS 2's API (start_m8_styletts2).
 voice_server = "http://127.0.0.1:8091"
 voice_reference = "voices/soldier.wav"
@@ -38,6 +38,8 @@ temperature = 1.0
 # The longest a spoken reply may get, in tokens (about 3-4 characters each). The
 # persona likes long lines; 50 cut them off mid-word.
 max_tokens = 200
+# The model can be cold on a busy server: loading it can take over a minute.
+timeout_seconds = 180
 
 [models]
 # Silero VAD, which runs in m8: it finds where speech starts and ends in the mic's audio.

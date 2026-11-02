@@ -1,0 +1,5 @@
+Mission: Black Mesa Inbound
+
+Story so far: {player} has just arrived at the Black Mesa Research Facility for a day's work. The tram is taking them down through the desert and into the facility; everything is calm, and the worst thing so far is a security guard complaining about his day.
+
+This mission: Nothing has gone wrong yet. This is the last quiet ride before the test.

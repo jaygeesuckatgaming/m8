@@ -1,0 +1,5 @@
+Mission: Surface Tension
+
+Story so far: {player} is finally outside, and the surface is a war zone. HECU marines, an Apache gunship and the things from Xen are all fighting over the same ground.
+
+This mission: Cross the dam and the cliffs, and reach the Lambda Complex.

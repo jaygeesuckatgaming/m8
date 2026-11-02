@@ -1,0 +1,5 @@
+Mission: On A Rail
+
+Story so far: {player} has a working tram and a long way to go through Black Mesa's rail system. The HECU hold the tunnels, and the facility's satellite uplink is the only way to tell the outside world what happened.
+
+This mission: Ride the rail line, fight through the marines, and launch the rocket that re-establishes contact.
