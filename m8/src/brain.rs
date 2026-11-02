@@ -109,6 +109,8 @@ pub struct Brain {
     /// The level this session reached (from its saves), and whether a game is connected.
     session_level: String,
     session_open: bool,
+    /// A spoken order ("stay here", "follow me", "attack"), done as said, not left to Kev.
+    pending_command: Option<&'static str>,
 }
 
 impl Brain {
@@ -159,6 +161,7 @@ impl Brain {
             journal_flushed: Instant::now(),
             session_level: String::new(),
             session_open: false,
+            pending_command: None,
         }
     }
 
@@ -238,6 +241,7 @@ impl Brain {
         let player = self.player();
         self.memory.feed.push(format!("{player}: {text}"));
         self.trace.add("heard", json!({"text": text}));
+        self.pending_command = Self::parse_command(text);
         self.respond(true)
     }
 
@@ -265,6 +269,26 @@ impl Brain {
     /// he's talking, nor until the cooldown (the game's setting) after his voice stops: Kev
     /// only picks what he does.
     fn respond(&mut self, to_player: bool) -> Result<()> {
+        // (a spoken order: do it as said, then answer; Kev isn't asked, so it can't choose
+        // otherwise)
+        if to_player {
+            if let Some(command) = self.pending_command.take() {
+                self.link
+                    .send_json(&json!({"type": "action", "action": command}));
+                self.memory.feed.push(format!(
+                    "(the player told {} to {}.)",
+                    self.cfg.mate.name,
+                    Self::command_words(command)
+                ));
+                self.trace
+                    .add("action", json!({"action": command, "by": "player"}));
+                if self.speaking.is_speaking() {
+                    self.speaking.interrupt();
+                }
+                return self.say();
+            }
+        }
+
         let cooldown = !to_player
             && self.speaking.quiet_from().map_or(true, |quiet| {
                 Instant::now() < quiet + self.link.speech_cooldown()
@@ -278,6 +302,83 @@ impl Brain {
             self.say()?;
         }
         Ok(())
+    }
+
+    /// A spoken order from the player: "stay here", "follow me", "attack". Only what was
+    /// actually said counts, so Kev can still pick the mate's own actions but can't stop it
+    /// at random.
+    fn parse_command(text: &str) -> Option<&'static str> {
+        let text = text.to_ascii_lowercase();
+        let words: Vec<&str> = text
+            .split(|c: char| !c.is_alphanumeric() && c != '\'')
+            .filter(|word| !word.is_empty())
+            .collect();
+        let last = words.last().copied().unwrap_or("");
+        let has = |phrases: &[&str]| phrases.iter().any(|phrase| text.contains(phrase));
+
+        if last == "stay"
+            || last == "hold"
+            || has(&[
+                "stay here",
+                "stay there",
+                "stay right there",
+                "stay put",
+                "hold position",
+                "hold this position",
+                "hold here",
+                "wait here",
+                "don't move",
+                "dont move",
+                "stand still",
+                "guard this",
+                "guard here",
+            ])
+        {
+            return Some("stay");
+        }
+        if last == "follow"
+            || has(&[
+                "follow me",
+                "come with me",
+                "let's go",
+                "lets go",
+                "move out",
+                "keep up",
+                "come here",
+                "with me",
+                "after me",
+            ])
+        {
+            return Some("follow");
+        }
+        if last == "attack"
+            || has(&[
+                "attack",
+                "kill it",
+                "kill him",
+                "kill her",
+                "shoot it",
+                "shoot him",
+                "shoot her",
+                "take it out",
+                "take him out",
+                "get it",
+                "get him",
+                "engage",
+                "open fire",
+            ])
+        {
+            return Some("attack");
+        }
+        None
+    }
+
+    fn command_words(command: &str) -> &'static str {
+        match command {
+            "stay" => "stay where she is",
+            "attack" => "attack",
+            _ => "follow you",
+        }
     }
 
     fn saves_path(cfg: &Config) -> PathBuf {
