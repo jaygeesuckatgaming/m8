@@ -56,7 +56,9 @@ impl Speaking {
 
     /// A line's voicing finished (or was dropped).
     pub fn end_line(&self) {
-        let _ = self.lines.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1));
+        let _ = self
+            .lines
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1));
     }
 
     /// When his voice stops (or stopped): none while a line is still being written or voiced.
@@ -97,9 +99,11 @@ fn main() -> Result<()> {
         // Plays WAVs through the live pipeline (48 kHz, 10 ms chunks -> resample -> VAD -> STT).
         let mut cfg = cfg.clone();
         cfg.mic.save_recordings = false;
-        let mut listener = listen::Listener::new(cfg.clone(), listen::Transcriber::new(&cfg), 48000)?;
+        let mut listener =
+            listen::Listener::new(cfg.clone(), listen::Transcriber::new(&cfg), 48000)?;
         for path in &args[i + 1..] {
-            let wave = sherpa_onnx::Wave::read(path).ok_or_else(|| anyhow::anyhow!("can't read {path}"))?;
+            let wave = sherpa_onnx::Wave::read(path)
+                .ok_or_else(|| anyhow::anyhow!("can't read {path}"))?;
             let mut audio = sherpa_onnx::LinearResampler::create(wave.sample_rate(), 48000)
                 .map(|r| r.resample(wave.samples(), true))
                 .unwrap_or_else(|| wave.samples().to_vec());
@@ -116,7 +120,8 @@ fn main() -> Result<()> {
     if let Some(i) = args.iter().position(|a| a == "--transcribe") {
         let transcriber = listen::Transcriber::new(&cfg);
         for path in &args[i + 1..] {
-            let wave = sherpa_onnx::Wave::read(path).ok_or_else(|| anyhow::anyhow!("can't read {path}"))?;
+            let wave = sherpa_onnx::Wave::read(path)
+                .ok_or_else(|| anyhow::anyhow!("can't read {path}"))?;
             let samples = sherpa_onnx::LinearResampler::create(wave.sample_rate(), 16000)
                 .map(|r| r.resample(wave.samples(), true))
                 .unwrap_or_else(|| wave.samples().to_vec());
@@ -133,6 +138,7 @@ fn main() -> Result<()> {
     let (hearing_tx, hearing_rx) = mpsc::channel::<link::Heard>();
     let hello = json!({"type": "hello", "name": cfg.mate.name, "sample_rate": voice.sample_rate});
     let link = link::GameLink::start(cfg.game.port, hello, events_tx, hearing_tx)?;
+    let eyes = site::Eyes::new();
     println!("Waiting for a game on 127.0.0.1:{}", cfg.game.port);
 
     let forward = inputs_tx.clone();
@@ -146,8 +152,14 @@ fn main() -> Result<()> {
                 Some("loaded") => brain::Input::Loaded(text("id")),
                 // (typed in the game by the player, as a game master's line: what models are
                 // trained to take as out of character, about the world)
-                Some("direct") => brain::Input::Event { text: format!("Game master: {}", text("text")), react: true },
-                _ => brain::Input::Event { text: text("text"), react: msg["react"].as_bool().unwrap_or(true) },
+                Some("direct") => brain::Input::Event {
+                    text: format!("Game master: {}", text("text")),
+                    react: true,
+                },
+                _ => brain::Input::Event {
+                    text: text("text"),
+                    react: msg["react"].as_bool().unwrap_or(true),
+                },
             };
             let _ = forward.send(input);
         }
@@ -174,7 +186,11 @@ fn main() -> Result<()> {
                     continue;
                 }
                 let speaker = about["speaker"].as_str().unwrap_or("Someone");
-                let over_radio = if about["radio"].as_bool().unwrap_or(false) { " over the radio" } else { "" };
+                let over_radio = if about["radio"].as_bool().unwrap_or(false) {
+                    " over the radio"
+                } else {
+                    ""
+                };
                 println!("[hearing] {speaker}{over_radio}: \"{text}\"");
                 // (the line is sent as it starts: he lets them finish before he answers)
                 std::thread::sleep(length.saturating_sub(started.elapsed()));
@@ -190,20 +206,45 @@ fn main() -> Result<()> {
     let persona = cfg.persona_dir();
     let system = site::PromptFile::load(persona.join("system_prompt.txt"))?;
     if system.get().trim().is_empty() {
-        anyhow::bail!("no system prompt in {} (the persona's folder: `persona` in the config)", persona.display());
+        anyhow::bail!(
+            "no system prompt in {} (the persona's folder: `persona` in the config)",
+            persona.display()
+        );
     }
     let combat = site::PromptFile::load(persona.join("combat_prompt.txt"))?;
     let radio = site::PromptFile::load(persona.join("radio_prompt.txt"))?;
     {
-        let (trace, system, combat, radio, link, inputs) =
-            (trace.clone(), system.clone(), combat.clone(), radio.clone(), link.clone(), inputs_tx.clone());
+        let (trace, system, combat, radio, link, inputs) = (
+            trace.clone(),
+            system.clone(),
+            combat.clone(),
+            radio.clone(),
+            link.clone(),
+            inputs_tx.clone(),
+        );
+        let eyes = eyes.clone();
         std::thread::spawn(move || {
-            if let Err(e) = site::run(trace, system, combat, radio, link, inputs) {
+            if let Err(e) = site::run(trace, system, combat, radio, link, inputs, eyes) {
                 eprintln!("[site] stopped: {e:#}");
             }
         });
     }
     println!("Brain page: http://127.0.0.1:{}", site::PORT);
+
+    // The mate's eyes, live: about a frame a second for the /eyes overlay. Only the latest is
+    // kept (in memory): the saved frames in logs/views are the brain's own looks.
+    {
+        let (link, eyes) = (link.clone(), eyes.clone());
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_millis(1000));
+            if !link.connected() {
+                continue;
+            }
+            if let Some(view) = link.view(Duration::from_secs(2)) {
+                eyes.put(picture::png(&view.rgb, view.width, view.height));
+            }
+        });
+    }
 
     let speaking = Speaking::new();
     let (speech_tx, speech_rx) = mpsc::channel();
@@ -217,7 +258,12 @@ fn main() -> Result<()> {
     }
 
     {
-        let (cfg, heard_tx, link, speaking) = (cfg.clone(), inputs_tx.clone(), link.clone(), speaking.clone());
+        let (cfg, heard_tx, link, speaking) = (
+            cfg.clone(),
+            inputs_tx.clone(),
+            link.clone(),
+            speaking.clone(),
+        );
         std::thread::spawn(move || {
             let (tx, rx) = mpsc::channel::<String>();
             std::thread::spawn(move || {
@@ -244,6 +290,17 @@ fn main() -> Result<()> {
     });
 
     println!("Ready! Talk to {} (or type a line here).", cfg.mate.name);
-    brain::Brain::new(cfg, link, speech_tx, speaking, trace, system, combat, radio, brain_inputs).run(inputs_rx);
+    brain::Brain::new(
+        cfg,
+        link,
+        speech_tx,
+        speaking,
+        trace,
+        system,
+        combat,
+        radio,
+        brain_inputs,
+    )
+    .run(inputs_rx);
     Ok(())
 }

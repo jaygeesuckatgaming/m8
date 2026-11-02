@@ -19,9 +19,13 @@ pub struct RemoteMemory {
 impl RemoteMemory {
     pub fn new(cfg: &MemoryConfig) -> Self {
         let url = if cfg.enabled { cfg.url.clone() } else { None };
-        let url = url.map(|u| u.trim().trim_end_matches('/').to_string()).filter(|u| !u.is_empty());
+        let url = url
+            .map(|u| u.trim().trim_end_matches('/').to_string())
+            .filter(|u| !u.is_empty());
         RemoteMemory {
-            agent: ureq::AgentBuilder::new().timeout(Duration::from_secs(120)).build(),
+            agent: ureq::AgentBuilder::new()
+                .timeout(Duration::from_secs(120))
+                .build(),
             url,
             source: cfg.source.clone(),
         }
@@ -47,14 +51,21 @@ impl RemoteMemory {
 
     /// What the memory has about `query` (nothing if the server isn't there).
     pub fn recall(&self, query: &str, top_k: usize) -> Vec<String> {
-        let Some(url) = self.url.clone() else { return Vec::new() };
+        let Some(url) = self.url.clone() else {
+            return Vec::new();
+        };
         let body = json!({"query": query, "top_k": top_k});
         match self.agent.post(&format!("{url}/recall")).send_json(body) {
             Ok(response) => response
                 .into_json::<Value>()
                 .ok()
                 .and_then(|value| value["results"].as_array().cloned())
-                .map(|items| items.iter().filter_map(|item| item.as_str().map(str::to_string)).collect())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default(),
             Err(e) => {
                 println!("[memory] recall failed: {e}");

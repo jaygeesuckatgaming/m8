@@ -9,8 +9,8 @@
 use serde_json::{json, Value};
 use std::io::{BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::mpsc::Sender;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -43,6 +43,8 @@ pub struct GameLink {
     speech_cooldown_ms: Arc<AtomicU64>,
     /// The view last asked for, once it comes.
     view: Arc<(Mutex<Option<View>>, Condvar)>,
+    /// One view request at a time (the eyes feed and the brain's own looks share them).
+    view_lock: Arc<Mutex<()>>,
     /// Counts game connections, so an old link's end can't end a new session.
     connections: Arc<AtomicU64>,
     hello: Value,
@@ -51,7 +53,12 @@ pub struct GameLink {
 impl GameLink {
     /// Starts accepting connections in the background. The game's events, saves and loads go to
     /// `events`, dialogue it played to `hearing`.
-    pub fn start(port: u16, hello: Value, events: Sender<Value>, hearing: Sender<Heard>) -> anyhow::Result<Self> {
+    pub fn start(
+        port: u16,
+        hello: Value,
+        events: Sender<Value>,
+        hearing: Sender<Heard>,
+    ) -> anyhow::Result<Self> {
         let listener = TcpListener::bind(("127.0.0.1", port))?;
         let link = GameLink {
             writer: Arc::new(Mutex::new(None)),
@@ -59,6 +66,7 @@ impl GameLink {
             mic_muted: Arc::new(AtomicBool::new(false)),
             speech_cooldown_ms: Arc::new(AtomicU64::new(5000)),
             view: Arc::new((Mutex::new(None), Condvar::new())),
+            view_lock: Arc::new(Mutex::new(())),
             connections: Arc::new(AtomicU64::new(0)),
             hello,
         };
@@ -67,7 +75,9 @@ impl GameLink {
         std::thread::spawn(move || {
             for stream in listener.incoming().flatten() {
                 let _ = stream.set_nodelay(true);
-                let Ok(reader) = stream.try_clone() else { continue };
+                let Ok(reader) = stream.try_clone() else {
+                    continue;
+                };
                 println!("[game] game connected");
                 *accept_link.writer.lock().unwrap() = Some(stream);
                 accept_link.send_json(&accept_link.hello);
@@ -77,7 +87,9 @@ impl GameLink {
 
                 let read_link = accept_link.clone();
                 let (events, hearing) = (events.clone(), hearing.clone());
-                std::thread::spawn(move || read_link.read_loop(reader, events, hearing, connection));
+                std::thread::spawn(move || {
+                    read_link.read_loop(reader, events, hearing, connection)
+                });
             }
         });
         Ok(link)
@@ -87,13 +99,22 @@ impl GameLink {
         std::time::Duration::from_millis(self.speech_cooldown_ms.load(Ordering::Relaxed))
     }
 
+    /// A game is connected right now.
+    pub fn connected(&self) -> bool {
+        self.writer.lock().unwrap().is_some()
+    }
+
     /// Asks the game for the player's view, and waits for it (None: no game, or it didn't come).
     pub fn view(&self, wait: Duration) -> Option<View> {
+        // (the eyes feed and the brain both ask: one request in flight at a time)
+        let _serialized = self.view_lock.lock().unwrap();
         let (slot, came) = &*self.view;
         let mut view = slot.lock().unwrap();
         *view = None;
         self.send_json(&json!({"type": "view"}));
-        let (mut view, _) = came.wait_timeout_while(view, wait, |view| view.is_none()).unwrap();
+        let (mut view, _) = came
+            .wait_timeout_while(view, wait, |view| view.is_none())
+            .unwrap();
         view.take()
     }
 
@@ -122,7 +143,13 @@ impl GameLink {
         }
     }
 
-    fn read_loop(&self, stream: TcpStream, events: Sender<Value>, hearing: Sender<Heard>, connection: u64) {
+    fn read_loop(
+        &self,
+        stream: TcpStream,
+        events: Sender<Value>,
+        hearing: Sender<Heard>,
+        connection: u64,
+    ) {
         let mut reader = BufReader::new(stream);
         loop {
             let mut header = [0u8; 5];
@@ -136,7 +163,10 @@ impl GameLink {
             }
             if header[0] == KIND_HEAR && payload.len() >= 2 {
                 let length = u16::from_be_bytes([payload[0], payload[1]]) as usize;
-                let Some(about) = payload.get(2..2 + length).and_then(|j| serde_json::from_slice::<Value>(j).ok()) else {
+                let Some(about) = payload
+                    .get(2..2 + length)
+                    .and_then(|j| serde_json::from_slice::<Value>(j).ok())
+                else {
                     continue;
                 };
                 let samples = payload[2 + length..]
@@ -148,15 +178,26 @@ impl GameLink {
             }
             if header[0] == KIND_VIEW && payload.len() >= 2 {
                 let length = u16::from_be_bytes([payload[0], payload[1]]) as usize;
-                let Some(about) = payload.get(2..2 + length).and_then(|j| serde_json::from_slice::<Value>(j).ok()) else {
+                let Some(about) = payload
+                    .get(2..2 + length)
+                    .and_then(|j| serde_json::from_slice::<Value>(j).ok())
+                else {
                     continue;
                 };
-                let (width, height) = (about["width"].as_u64().unwrap_or(0) as usize, about["height"].as_u64().unwrap_or(0) as usize);
+                let (width, height) = (
+                    about["width"].as_u64().unwrap_or(0) as usize,
+                    about["height"].as_u64().unwrap_or(0) as usize,
+                );
                 let rgb = payload[2 + length..].to_vec();
                 if width * height * 3 == rgb.len() {
                     let spots = about["spots"].as_array().cloned().unwrap_or_default();
                     let (slot, came) = &*self.view;
-                    *slot.lock().unwrap() = Some(View { width, height, rgb, spots });
+                    *slot.lock().unwrap() = Some(View {
+                        width,
+                        height,
+                        rgb,
+                        spots,
+                    });
                     came.notify_all();
                 }
                 continue;
@@ -164,19 +205,29 @@ impl GameLink {
             if header[0] != KIND_JSON {
                 continue;
             }
-            let Ok(msg) = serde_json::from_slice::<Value>(&payload) else { continue };
+            let Ok(msg) = serde_json::from_slice::<Value>(&payload) else {
+                continue;
+            };
             match msg["type"].as_str() {
                 Some("state") => *self.state.lock().unwrap() = msg,
                 Some("settings") => {
                     if let Some(seconds) = msg["speech_cooldown"].as_f64() {
-                        self.speech_cooldown_ms.store((seconds.max(0.0) * 1000.0) as u64, Ordering::Relaxed);
+                        self.speech_cooldown_ms
+                            .store((seconds.max(0.0) * 1000.0) as u64, Ordering::Relaxed);
                         println!("[game] speech cooldown {seconds} s");
                     }
                 }
                 Some("mic") => {
                     let muted = msg["muted"].as_bool().unwrap_or(false);
                     if self.mic_muted.swap(muted, Ordering::Relaxed) != muted {
-                        println!("[mic] {}", if muted { "muted in the game" } else { "unmuted in the game" });
+                        println!(
+                            "[mic] {}",
+                            if muted {
+                                "muted in the game"
+                            } else {
+                                "unmuted in the game"
+                            }
+                        );
                     }
                 }
                 Some("event" | "saved" | "loaded" | "direct") => {

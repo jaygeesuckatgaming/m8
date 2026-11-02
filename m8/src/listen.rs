@@ -2,10 +2,10 @@
 
 use crate::config::{path_str, Config};
 use crate::link::GameLink;
-use serde_json::{json, Value};
 use anyhow::{anyhow, bail, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
+use serde_json::{json, Value};
 use sherpa_onnx::{LinearResampler, VadModelConfig, VoiceActivityDetector};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
@@ -34,8 +34,14 @@ pub struct Transcriber {
 
 impl Transcriber {
     pub fn new(cfg: &Config) -> Self {
-        let agent = ureq::AgentBuilder::new().timeout(std::time::Duration::from_secs(30)).build();
-        Transcriber { url: cfg.stt.url.clone(), model: cfg.stt.model.clone(), agent }
+        let agent = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(30))
+            .build();
+        Transcriber {
+            url: cfg.stt.url.clone(),
+            model: cfg.stt.model.clone(),
+            agent,
+        }
     }
 
     /// What's said in 16 kHz mono audio.
@@ -54,11 +60,18 @@ impl Transcriber {
         let reply: Value = self
             .agent
             .post(&self.url)
-            .set("Content-Type", &format!("multipart/form-data; boundary={BOUNDARY}"))
+            .set(
+                "Content-Type",
+                &format!("multipart/form-data; boundary={BOUNDARY}"),
+            )
             .send_bytes(&body)
             .map_err(|e| anyhow!("speech-to-text at {}: {e}", self.url))?
             .into_json()?;
-        Ok(reply["text"].as_str().unwrap_or_default().trim().to_string())
+        Ok(reply["text"]
+            .as_str()
+            .unwrap_or_default()
+            .trim()
+            .to_string())
     }
 }
 
@@ -119,7 +132,10 @@ pub struct Listener {
 
 impl Listener {
     pub fn new(cfg: Config, transcriber: Transcriber, input_rate: i32) -> Result<Self> {
-        let recordings = cfg.mic.save_recordings.then(|| cfg.base_dir.join("recordings"));
+        let recordings = cfg
+            .mic
+            .save_recordings
+            .then(|| cfg.base_dir.join("recordings"));
         if let Some(dir) = &recordings {
             std::fs::create_dir_all(dir)?;
             println!("[mic] saving what it hears to {}", dir.display());
@@ -233,7 +249,10 @@ impl Listener {
         if from >= to || start < self.kept_from {
             return samples.to_vec();
         }
-        self.kept.range(from - self.kept_from..to - self.kept_from).copied().collect()
+        self.kept
+            .range(from - self.kept_from..to - self.kept_from)
+            .copied()
+            .collect()
     }
 
     /// True while the VAD thinks someone is talking (it needs ~0.25 s of speech to switch on).
@@ -246,7 +265,13 @@ impl Listener {
 ///
 /// With barge-in on, the mic stays live while the mate talks: as soon as the player starts
 /// speaking, the mate is cut off (queued audio in the game, pending TTS and the LLM reply).
-pub fn run(cfg: Config, transcriber: Transcriber, speaking: Speaking, link: GameLink, out: Sender<String>) -> Result<()> {
+pub fn run(
+    cfg: Config,
+    transcriber: Transcriber,
+    speaking: Speaking,
+    link: GameLink,
+    out: Sender<String>,
+) -> Result<()> {
     let host = cpal::default_host();
     let device = match cfg.mic.device.as_deref() {
         Some(wanted) if !wanted.is_empty() => {
@@ -264,7 +289,9 @@ pub fn run(cfg: Config, transcriber: Transcriber, speaking: Speaking, link: Game
                 .or_else(|| host.default_input_device())
                 .ok_or_else(|| anyhow!("no microphone matching '{wanted}' and no default"))?
         }
-        _ => host.default_input_device().ok_or_else(|| anyhow!("no microphone found"))?,
+        _ => host
+            .default_input_device()
+            .ok_or_else(|| anyhow!("no microphone found"))?,
     };
     let supported = device.default_input_config()?;
     let mic_rate = supported.sample_rate().0 as i32;

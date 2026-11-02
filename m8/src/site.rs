@@ -32,7 +32,58 @@ struct Traced {
 }
 
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// The mate's eyes, live: the last frame the eyes feed grabbed, for /eyes.png (memory only;
+/// the views the brain itself looked at are the saved files in logs/views).
+#[derive(Clone)]
+pub struct Eyes(Arc<Mutex<Option<Eye>>>);
+
+struct Eye {
+    png: Arc<Vec<u8>>,
+    at: u64,
+}
+
+impl Eyes {
+    pub fn new() -> Self {
+        Eyes(Arc::new(Mutex::new(None)))
+    }
+
+    pub fn put(&self, png: Vec<u8>) {
+        *self.0.lock().unwrap() = Some(Eye {
+            png: Arc::new(png),
+            at: now_ms(),
+        });
+    }
+
+    pub fn get(&self) -> Option<(Arc<Vec<u8>>, u64)> {
+        self.0
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|eye| (eye.png.clone(), eye.at))
+    }
+}
+
+/// The newest view the brain looked at (logs/views), for before the feed has a frame.
+fn newest_view(trace: &Trace) -> Option<Vec<u8>> {
+    let dir = trace.0.lock().unwrap().logs.join("views");
+    let newest = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .map(|ext| ext.to_ascii_lowercase() == "png")
+                .unwrap_or(false)
+        })
+        .max_by_key(|entry| entry.metadata().and_then(|meta| meta.modified()).ok());
+    std::fs::read(newest?.path()).ok()
 }
 
 impl Trace {
@@ -42,7 +93,13 @@ impl Trace {
         let file = File::create(logs.join(format!("{session}.jsonl")))
             .map_err(|e| eprintln!("[site] no history log in {}: {e}", logs.display()))
             .ok();
-        Trace(Arc::new(Mutex::new(Traced { prompt: String::new(), entries: Vec::new(), session, logs: logs.to_path_buf(), file })))
+        Trace(Arc::new(Mutex::new(Traced {
+            prompt: String::new(),
+            entries: Vec::new(),
+            session,
+            logs: logs.to_path_buf(),
+            file,
+        })))
     }
 
     pub fn set_prompt(&self, prompt: &str) {
@@ -66,9 +123,15 @@ fn sessions(trace: &Trace) -> Value {
         .map(|dir| {
             dir.flatten()
                 .filter_map(|file| {
-                    let name = file.file_name().to_string_lossy().strip_suffix(".jsonl")?.to_string();
+                    let name = file
+                        .file_name()
+                        .to_string_lossy()
+                        .strip_suffix(".jsonl")?
+                        .to_string();
                     let size = file.metadata().map(|m| m.len()).unwrap_or(0);
-                    name.chars().all(|c| c.is_ascii_digit()).then_some((name, size))
+                    name.chars()
+                        .all(|c| c.is_ascii_digit())
+                        .then_some((name, size))
                 })
                 .collect()
         })
@@ -87,7 +150,11 @@ fn session(trace: &Trace, name: &str) -> Option<Value> {
     }
     let path = trace.0.lock().unwrap().logs.join(format!("{name}.jsonl"));
     let text = std::fs::read_to_string(path).ok()?;
-    Some(Value::Array(text.lines().filter_map(|line| serde_json::from_str(line).ok()).collect()))
+    Some(Value::Array(
+        text.lines()
+            .filter_map(|line| serde_json::from_str(line).ok())
+            .collect(),
+    ))
 }
 
 /// A prompt kept in a file, so edits on the page last (the system, combat and radio prompts).
@@ -105,7 +172,10 @@ impl PromptFile {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(e) => return Err(anyhow::anyhow!("reading {}: {e}", path.display())),
         };
-        Ok(PromptFile { path, text: Arc::new(Mutex::new(text)) })
+        Ok(PromptFile {
+            path,
+            text: Arc::new(Mutex::new(text)),
+        })
     }
 
     pub fn get(&self) -> String {
@@ -126,19 +196,36 @@ pub fn run(
     radio: PromptFile,
     link: GameLink,
     inputs: Sender<Input>,
+    eyes: Eyes,
 ) -> anyhow::Result<()> {
-    let server = tiny_http::Server::http(("127.0.0.1", PORT)).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let server =
+        tiny_http::Server::http(("127.0.0.1", PORT)).map_err(|e| anyhow::anyhow!("{e}"))?;
     for mut request in server.incoming_requests() {
         let mut body = String::new();
         let _ = request.as_reader().read_to_string(&mut body);
         let url = request.url().to_string();
-        let reply = match (request.method().as_str(), url.split('?').next().unwrap_or("")) {
+        let reply = match (
+            request.method().as_str(),
+            url.split('?').next().unwrap_or(""),
+        ) {
             ("GET", "/") => tiny_http::Response::from_string(include_str!("site.html"))
-                .with_header("Content-Type: text/html; charset=utf-8".parse::<tiny_http::Header>().unwrap()),
+                .with_header(
+                    "Content-Type: text/html; charset=utf-8"
+                        .parse::<tiny_http::Header>()
+                        .unwrap(),
+                ),
             ("GET", "/history") => tiny_http::Response::from_string(include_str!("history.html"))
-                .with_header("Content-Type: text/html; charset=utf-8".parse::<tiny_http::Header>().unwrap()),
+                .with_header(
+                    "Content-Type: text/html; charset=utf-8"
+                        .parse::<tiny_http::Header>()
+                        .unwrap(),
+                ),
             ("GET", "/trace") => {
-                let since: usize = url.split("since=").nth(1).and_then(|n| n.parse().ok()).unwrap_or(0);
+                let since: usize = url
+                    .split("since=")
+                    .nth(1)
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(0);
                 let traced = trace.0.lock().unwrap();
                 let state = link.state.lock().unwrap().clone();
                 let new = traced.entries.get(since..).unwrap_or_default();
@@ -152,13 +239,59 @@ pub fn run(
             // (a picture the LLM saw, logs/views/<name>.png: the mate's eyes)
             ("GET", "/view") => {
                 let name = url.split("name=").nth(1).unwrap_or("");
-                let path = trace.0.lock().unwrap().logs.join("views").join(format!("{name}.png"));
-                match std::fs::read(path).ok().filter(|_| !name.is_empty() && name.chars().all(|c| c.is_ascii_digit())) {
-                    Some(png) => tiny_http::Response::from_data(png)
-                        .with_header("Content-Type: image/png".parse::<tiny_http::Header>().unwrap()),
+                let path = trace
+                    .0
+                    .lock()
+                    .unwrap()
+                    .logs
+                    .join("views")
+                    .join(format!("{name}.png"));
+                match std::fs::read(path)
+                    .ok()
+                    .filter(|_| !name.is_empty() && name.chars().all(|c| c.is_ascii_digit()))
+                {
+                    Some(png) => tiny_http::Response::from_data(png).with_header(
+                        "Content-Type: image/png"
+                            .parse::<tiny_http::Header>()
+                            .unwrap(),
+                    ),
                     None => tiny_http::Response::from_data(Vec::new()).with_status_code(404),
                 }
             }
+            // (the mate's eyes, live: the overlay page and its frame, about one a second)
+            ("GET", "/eyes") => tiny_http::Response::from_string(include_str!("eyes.html"))
+                .with_header(
+                    "Content-Type: text/html; charset=utf-8"
+                        .parse::<tiny_http::Header>()
+                        .unwrap(),
+                ),
+            ("GET", "/eyes.png") => match eyes.get() {
+                Some((png, at)) => tiny_http::Response::from_data(png.as_ref().clone())
+                    .with_header(
+                        "Content-Type: image/png"
+                            .parse::<tiny_http::Header>()
+                            .unwrap(),
+                    )
+                    .with_header(
+                        "Cache-Control: no-store"
+                            .parse::<tiny_http::Header>()
+                            .unwrap(),
+                    )
+                    .with_header(
+                        format!("X-Eyes-At: {at}")
+                            .parse::<tiny_http::Header>()
+                            .unwrap(),
+                    ),
+                // (before the feed has a frame: the newest view the brain itself looked at)
+                None => match newest_view(&trace) {
+                    Some(png) => tiny_http::Response::from_data(png).with_header(
+                        "Content-Type: image/png"
+                            .parse::<tiny_http::Header>()
+                            .unwrap(),
+                    ),
+                    None => tiny_http::Response::from_data(Vec::new()).with_status_code(404),
+                },
+            },
             ("GET", "/session") => match session(&trace, url.split("name=").nth(1).unwrap_or("")) {
                 Some(entries) => tiny_http::Response::from_string(entries.to_string()),
                 None => tiny_http::Response::from_string("no such session").with_status_code(404),
@@ -183,7 +316,10 @@ pub fn run(
                 tiny_http::Response::from_string("")
             }
             ("POST", "/event") => {
-                let _ = inputs.send(Input::Event { text: body, react: true });
+                let _ = inputs.send(Input::Event {
+                    text: body,
+                    react: true,
+                });
                 tiny_http::Response::from_string("")
             }
             ("POST", "/save") => {

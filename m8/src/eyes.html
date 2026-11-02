@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gem's eyes</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+  #pic {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    object-fit: contain;
+    visibility: hidden;
+  }
+  #cap {
+    position: fixed;
+    left: 10px;
+    bottom: 8px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #d8d8d8;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<img id="pic" alt="">
+<div id="cap">Gem's eyes</div>
+<script>
+  const pic = document.getElementById('pic');
+  const cap = document.getElementById('cap');
+  let current = '';
+
+  async function tick() {
+    try {
+      const response = await fetch('/eyes.png?t=' + Date.now(), { cache: 'no-store' });
+      if (!response.ok) throw new Error(response.status);
+      const blob = await response.blob();
+      const next = URL.createObjectURL(blob);
+      pic.src = next;
+      pic.style.visibility = 'visible';
+      if (current) setTimeout(() => URL.revokeObjectURL(current), 4000);
+      current = next;
+      cap.textContent = "Gem's eyes · " + new Date().toLocaleTimeString();
+    } catch (e) {
+      pic.style.visibility = 'hidden';
+      cap.textContent = "Gem isn't looking yet";
+    }
+  }
+
+  tick();
+  setInterval(tick, 1000);
+</script>
+</body>
+</html>

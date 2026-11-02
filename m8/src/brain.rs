@@ -36,17 +36,27 @@ pub enum Input {
     /// Something that happened in the game, in words. `react`: Kev picks what the mate does
     /// about it (and whether it speaks); without, it only goes into the feed (e.g. dialogue in a
     /// cutscene).
-    Event { text: String, react: bool },
+    Event {
+        text: String,
+        react: bool,
+    },
     /// The game saved (its id for the save), or loaded a save.
     Saved(String),
     Loaded(String),
     /// A summary of the feed's oldest lines is ready.
-    Summary { memory: u64, folded: usize, text: String },
+    Summary {
+        memory: u64,
+        folded: usize,
+        text: String,
+    },
     /// A game connected (a play session starts) or went away.
     Connected,
     Disconnected,
     /// What the memory had to say: past sessions, and about the player.
-    Recalled { sessions: Vec<String>, player: Vec<String> },
+    Recalled {
+        sessions: Vec<String>,
+        player: Vec<String>,
+    },
 }
 
 /// The feed's size, in tokens (counted as 4 characters each): over FEED_TOKENS, at a safe point
@@ -113,14 +123,19 @@ impl Brain {
         radio: PromptFile,
         inputs: Sender<Input>,
     ) -> Self {
-        let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(60)).build();
+        let agent = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(60))
+            .build();
         let saves = std::fs::read_to_string(Self::saves_path(&cfg))
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or_default();
         let remote = RemoteMemory::new(&cfg.memory);
         if remote.enabled() {
-            println!("[memory] connected to {}", cfg.memory.url.as_deref().unwrap_or_default());
+            println!(
+                "[memory] connected to {}",
+                cfg.memory.url.as_deref().unwrap_or_default()
+            );
         }
         Brain {
             cfg,
@@ -161,14 +176,20 @@ impl Brain {
                     Err(RecvTimeoutError::Disconnected) => break,
                     Err(RecvTimeoutError::Timeout) => {
                         let s = self.state();
-                        if self.speaking.is_speaking() || s.is_null() || s["in_combat"].as_bool().unwrap_or(false) {
+                        if self.speaking.is_speaking()
+                            || s.is_null()
+                            || s["in_combat"].as_bool().unwrap_or(false)
+                        {
                             quiet_since = Instant::now();
                         }
                         if quiet_since.elapsed() < QUIET {
                             continue;
                         }
                         quiet = true;
-                        Input::Event { text: QUIET_EVENT.to_string(), react: true }
+                        Input::Event {
+                            text: QUIET_EVENT.to_string(),
+                            react: true,
+                        }
                     }
                 },
             };
@@ -195,7 +216,11 @@ impl Brain {
                 }
                 Input::Saved(id) => self.on_saved(id),
                 Input::Loaded(id) => self.on_loaded(&id),
-                Input::Summary { memory, folded, text } => self.on_summary(memory, folded, text),
+                Input::Summary {
+                    memory,
+                    folded,
+                    text,
+                } => self.on_summary(memory, folded, text),
                 Input::Connected => self.on_connected(),
                 Input::Disconnected => self.on_disconnected(),
                 Input::Recalled { sessions, player } => self.on_recalled(sessions, player),
@@ -221,7 +246,10 @@ impl Brain {
             let text = self.fill(text);
             self.memory.feed.push(text.clone());
             // (and the game's state as it was then: what Kev and the LLM saw of it)
-            self.trace.add("event", json!({"text": text, "react": react, "state": self.state()}));
+            self.trace.add(
+                "event",
+                json!({"text": text, "react": react, "state": self.state()}),
+            );
             // (a story line, or one of the notable things: kept for the session's memory)
             self.note(&text, !*react);
         }
@@ -238,7 +266,9 @@ impl Brain {
     /// only picks what he does.
     fn respond(&mut self, to_player: bool) -> Result<()> {
         let cooldown = !to_player
-            && self.speaking.quiet_from().map_or(true, |quiet| Instant::now() < quiet + self.link.speech_cooldown());
+            && self.speaking.quiet_from().map_or(true, |quiet| {
+                Instant::now() < quiet + self.link.speech_cooldown()
+            });
         if self.decide(to_player, cooldown)? {
             // (still talking: he drops what he hadn't said yet; what's playing goes on until the
             // new line's first audio takes its place, speak.rs)
@@ -260,8 +290,12 @@ impl Brain {
         if self.saves.len() > SAVES {
             self.saves.remove(0);
         }
-        std::fs::write(Self::saves_path(&self.cfg), serde_json::to_string(&self.saves)?)?;
-        self.trace.add("event", json!({"text": format!("(the game saved: {id})")}));
+        std::fs::write(
+            Self::saves_path(&self.cfg),
+            serde_json::to_string(&self.saves)?,
+        )?;
+        self.trace
+            .add("event", json!({"text": format!("(the game saved: {id})")}));
         // (the level it saved at: the first of the save's "level:time" id)
         let level = id.split(':').next().unwrap_or_default().to_string();
         if !level.is_empty() && level != self.session_level {
@@ -283,8 +317,15 @@ impl Brain {
             self.speaking.interrupt();
             self.link.send_json(&json!({"type": "stop_audio"}));
         }
-        let note = if found.is_some() { "memory restored" } else { "a save it never saw: memory cleared" };
-        self.trace.add("event", json!({"text": format!("(the game loaded {id}: {note})")}));
+        let note = if found.is_some() {
+            "memory restored"
+        } else {
+            "a save it never saw: memory cleared"
+        };
+        self.trace.add(
+            "event",
+            json!({"text": format!("(the game loaded {id}: {note})")}),
+        );
         println!("[brain] loaded {id}: {note}");
         Ok(())
     }
@@ -294,7 +335,10 @@ impl Brain {
         if memory == self.memory_generation && folded <= self.memory.feed.len() {
             self.memory.feed.drain(..folded);
             self.memory.summary = text;
-            self.trace.add("memory", json!({"summary": self.memory.summary, "folded": folded}));
+            self.trace.add(
+                "memory",
+                json!({"summary": self.memory.summary, "folded": folded}),
+            );
         }
         Ok(())
     }
@@ -310,7 +354,10 @@ impl Brain {
         self.session_level.clear();
         self.journal.clear();
         self.journal_flushed = Instant::now();
-        let level = self.state()["level"].as_str().unwrap_or("unknown").to_string();
+        let level = self.state()["level"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string();
         self.remote.remember(
             "Gem",
             &format!(
@@ -327,7 +374,10 @@ impl Brain {
                 5,
             );
             let about = remote.recall(&format!("what do I remember about {player}"), 5);
-            let _ = inputs.send(Input::Recalled { sessions, player: about });
+            let _ = inputs.send(Input::Recalled {
+                sessions,
+                player: about,
+            });
         });
         println!("[memory] session started");
         Ok(())
@@ -356,15 +406,32 @@ impl Brain {
         self.session_open = false;
         self.flush_journal();
         let summary = if self.memory.summary.is_empty() {
-            self.memory.feed.iter().rev().take(10).rev().cloned().collect::<Vec<_>>().join(" ")
+            self.memory
+                .feed
+                .iter()
+                .rev()
+                .take(10)
+                .rev()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" ")
         } else {
             self.memory.summary.clone()
         };
         let summary: String = summary.trim().chars().take(500).collect();
-        let summary = if summary.is_empty() { String::new() } else { format!(" — {summary}") };
+        let summary = if summary.is_empty() {
+            String::new()
+        } else {
+            format!(" — {summary}")
+        };
         self.remote.remember(
             "Gem",
-            &format!("finished playing Halo with {} on {}{}", self.player(), Self::today(), summary),
+            &format!(
+                "finished playing Halo with {} on {}{}",
+                self.player(),
+                Self::today(),
+                summary
+            ),
         );
         println!("[memory] session ended");
         Ok(())
@@ -380,7 +447,8 @@ impl Brain {
         if text.is_empty() {
             return;
         }
-        self.journal.push(format!("{} {text}", Local::now().format("%H:%M")));
+        self.journal
+            .push(format!("{} {text}", Local::now().format("%H:%M")));
         // (memory down for a long while: keep the newest, drop the oldest)
         if self.journal.len() > 500 {
             self.journal.drain(..100);
@@ -397,8 +465,16 @@ impl Brain {
             return false;
         }
         [
-            "killed", "shields", "badly hurt", "heavy fire", "shot ", "died", "is dead",
-            "picked up", "got in the", "objective",
+            "killed",
+            "shields",
+            "badly hurt",
+            "heavy fire",
+            "shot ",
+            "died",
+            "is dead",
+            "picked up",
+            "got in the",
+            "objective",
         ]
         .iter()
         .any(|word| text.contains(word))
@@ -442,13 +518,27 @@ impl Brain {
             return;
         }
         let mut folded = 0;
-        while folded < self.memory.feed.len() && tokens(&self.memory.feed[folded..]) > FEED_FOLDED_TO {
+        while folded < self.memory.feed.len()
+            && tokens(&self.memory.feed[folded..]) > FEED_FOLDED_TO
+        {
             folded += 1;
         }
         self.summarizing = true;
-        let (agent, url, name, model) = (self.agent.clone(), self.cfg.llm.url.clone(), self.cfg.mate.name.clone(), self.cfg.llm.model.clone());
-        let (previous, lines) = (self.memory.summary.clone(), self.memory.feed[..folded].join("\n"));
-        let (inputs, memory, trace) = (self.inputs.clone(), self.memory_generation, self.trace.clone());
+        let (agent, url, name, model) = (
+            self.agent.clone(),
+            self.cfg.llm.url.clone(),
+            self.cfg.mate.name.clone(),
+            self.cfg.llm.model.clone(),
+        );
+        let (previous, lines) = (
+            self.memory.summary.clone(),
+            self.memory.feed[..folded].join("\n"),
+        );
+        let (inputs, memory, trace) = (
+            self.inputs.clone(),
+            self.memory_generation,
+            self.trace.clone(),
+        );
         let temperature = 0.3;
         std::thread::spawn(move || {
             let start = Instant::now();
@@ -468,7 +558,11 @@ impl Brain {
                 .send_json(body)
                 .map_err(anyhow::Error::from)
                 .and_then(|r| Ok(r.into_json()?));
-            let output = reply.as_ref().ok().and_then(|r| r["choices"][0]["message"]["content"].as_str()).map(str::to_string);
+            let output = reply
+                .as_ref()
+                .ok()
+                .and_then(|r| r["choices"][0]["message"]["content"].as_str())
+                .map(str::to_string);
             trace.add(
                 "summary",
                 json!({
@@ -482,9 +576,16 @@ impl Brain {
             );
             match output {
                 Some(output) => {
-                    let _ = inputs.send(Input::Summary { memory, folded, text: clean(&output) });
+                    let _ = inputs.send(Input::Summary {
+                        memory,
+                        folded,
+                        text: clean(&output),
+                    });
                 }
-                None => eprintln!("[brain] summary failed: {:#}", reply.err().map(|e| e.to_string()).unwrap_or_default()),
+                None => eprintln!(
+                    "[brain] summary failed: {:#}",
+                    reply.err().map(|e| e.to_string()).unwrap_or_default()
+                ),
             }
         });
     }
@@ -516,7 +617,13 @@ impl Brain {
     fn context(&self) -> Vec<String> {
         let mut parts = Vec::new();
         if let Some(story) = self.state()["level"].as_str().and_then(|level| {
-            std::fs::read_to_string(self.cfg.persona_dir().join("levels").join(format!("{level}.txt"))).ok()
+            std::fs::read_to_string(
+                self.cfg
+                    .persona_dir()
+                    .join("levels")
+                    .join(format!("{level}.txt")),
+            )
+            .ok()
         }) {
             parts.push(self.fill(story.trim()));
         }
@@ -537,13 +644,19 @@ impl Brain {
             ));
         }
         if !self.memory.summary.is_empty() {
-            parts.push(format!("What {} remembers: {}", self.cfg.mate.name, self.memory.summary));
+            parts.push(format!(
+                "What {} remembers: {}",
+                self.cfg.mate.name, self.memory.summary
+            ));
         }
         parts
     }
 
     fn right_now(&self) -> String {
-        format!("Right now: {}", self.fill(self.state()["state"].as_str().unwrap_or("unknown")))
+        format!(
+            "Right now: {}",
+            self.fill(self.state()["state"].as_str().unwrap_or("unknown"))
+        )
     }
 
     /// Who the mate is: the system prompt.
@@ -571,7 +684,11 @@ impl Brain {
     /// player's since).
     fn newest(&self) -> usize {
         let own = format!("{}: ", self.cfg.mate.name);
-        self.memory.feed.iter().rposition(|line| line.starts_with(&own)).map_or(0, |at| at + 1)
+        self.memory
+            .feed
+            .iter()
+            .rposition(|line| line.starts_with(&own))
+            .map_or(0, |at| at + 1)
     }
 
     /// Kev's prompt: who the mate is, the context, the feed's newest KEV_FEED_LINES, with what
@@ -623,9 +740,16 @@ impl Brain {
         for line in &self.memory.feed[newest..] {
             add("user", line);
         }
-        let messages: Vec<Value> = turns.iter().map(|(role, text)| json!({"role": role, "content": text})).collect();
+        let messages: Vec<Value> = turns
+            .iter()
+            .map(|(role, text)| json!({"role": role, "content": text}))
+            .collect();
         self.trace.set_prompt(
-            &turns.iter().map(|(role, text)| format!("[{role}]\n{text}")).collect::<Vec<_>>().join("\n\n"),
+            &turns
+                .iter()
+                .map(|(role, text)| format!("[{role}]\n{text}"))
+                .collect::<Vec<_>>()
+                .join("\n\n"),
         );
         messages
     }
@@ -640,7 +764,10 @@ impl Brain {
         let start = Instant::now();
         // (each call to Kev, with what went in and came out, for the history page)
         let mut calls = Vec::new();
-        let actions = self.state()["actions"].as_array().cloned().unwrap_or_default();
+        let actions = self.state()["actions"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
         let done = self.act("do", &actions, &mut calls)?;
         let then = actions
             .iter()
@@ -655,11 +782,13 @@ impl Brain {
         // (then whether he speaks, with what he just did in the feed; Kev's yes or no: yes when
         // it's the likelier)
         let ask_speak = !to_player && !cooldown;
-        let speak = to_player || ask_speak && {
-            let speak_question = json!({"speak": {"type": "noul", "instructions": format!("Should {name} speak now?")}});
-            let spoken = self.kev("speak", &self.prompt(), &speak_question, &mut calls)?;
-            spoken["speak"]["noul"].as_f64().unwrap_or(0.0) >= 0.5
-        };
+        let speak = to_player
+            || ask_speak
+                && {
+                    let speak_question = json!({"speak": {"type": "noul", "instructions": format!("Should {name} speak now?")}});
+                    let spoken = self.kev("speak", &self.prompt(), &speak_question, &mut calls)?;
+                    spoken["speak"]["noul"].as_f64().unwrap_or(0.0) >= 0.5
+                };
         self.trace.add(
             "kev",
             json!({
@@ -681,14 +810,27 @@ impl Brain {
             format!(
                 "{}{}",
                 done["action"].as_str().unwrap_or("nothing"),
-                done["option"].as_str().map(|o| format!(" {o}")).unwrap_or_default()
+                done["option"]
+                    .as_str()
+                    .map(|o| format!(" {o}"))
+                    .unwrap_or_default()
             )
         };
         println!(
             "[kev] {}{}, speak {} ({} ms)",
             did(&done),
-            if then_done.is_null() { String::new() } else { format!(", then {}", did(&then_done)) },
-            if cooldown { "not asked (cooldown)" } else if speak { "yes" } else { "no" },
+            if then_done.is_null() {
+                String::new()
+            } else {
+                format!(", then {}", did(&then_done))
+            },
+            if cooldown {
+                "not asked (cooldown)"
+            } else if speak {
+                "yes"
+            } else {
+                "no"
+            },
             start.elapsed().as_millis()
         );
         Ok(speak)
@@ -700,28 +842,52 @@ impl Brain {
     fn act(&mut self, purpose: &str, actions: &[Value], calls: &mut Vec<Value>) -> Result<Value> {
         let name = self.cfg.mate.name.clone();
         let mut options = serde_json::Map::new();
-        options.insert("nothing".to_string(), json!(format!("{name} carries on as he is")));
+        options.insert(
+            "nothing".to_string(),
+            json!(format!("{name} carries on as he is")),
+        );
         for a in actions {
             let description = self.fill(a["description"].as_str().unwrap_or_default());
-            options.insert(a["name"].as_str().unwrap_or_default().to_string(), json!(format!("{name} {description}")));
+            options.insert(
+                a["name"].as_str().unwrap_or_default().to_string(),
+                json!(format!("{name} {description}")),
+            );
         }
         let prompt = self.prompt();
         let question = json!({"do": {"type": "choice", "instructions": format!("Which of these does {name} do now?"), "criteria": options}});
         let answers = self.kev(purpose, &prompt, &question, calls)?;
-        let action = answers["do"]["choice"].as_str().unwrap_or("nothing").to_string();
+        let action = answers["do"]["choice"]
+            .as_str()
+            .unwrap_or("nothing")
+            .to_string();
         if action == "nothing" {
             return Ok(json!({"action": action}));
         }
-        let chosen = actions.iter().find(|a| a["name"] == action.as_str()).cloned().unwrap_or_default();
+        let chosen = actions
+            .iter()
+            .find(|a| a["name"] == action.as_str())
+            .cloned()
+            .unwrap_or_default();
         let mut msg = json!({"type": "action", "action": action});
         // ("Kevin stands up." / "Kevin shoots at an enemy: grunt close (8 m) ahead.")
-        let mut line = options[action.as_str()].as_str().unwrap_or_default().to_string();
+        let mut line = options[action.as_str()]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
         if let Some(targets) = chosen["options"].as_object().filter(|o| !o.is_empty()) {
             let which = json!({"which": {"type": "choice", "instructions": format!("{line}. Which one?"), "criteria": targets}});
-            let which_purpose = if purpose == "do" { "which".to_string() } else { format!("{purpose}: which") };
+            let which_purpose = if purpose == "do" {
+                "which".to_string()
+            } else {
+                format!("{purpose}: which")
+            };
             let answer = self.kev(&which_purpose, &prompt, &which, calls)?;
             msg["option"] = answer["which"]["choice"].clone();
-            if let Some(label) = msg["option"].as_str().and_then(|id| targets.get(id)).and_then(Value::as_str) {
+            if let Some(label) = msg["option"]
+                .as_str()
+                .and_then(|id| targets.get(id))
+                .and_then(Value::as_str)
+            {
                 line = format!("{line}: {label}");
             }
         }
@@ -752,7 +918,10 @@ impl Brain {
         let (name, player) = (self.cfg.mate.name.clone(), self.player());
         let start = Instant::now();
         let Some(mut view) = self.link.view(Duration::from_secs(2)) else {
-            self.trace.add("sight", json!({"kind": kind, "error": "the game sent no view"}));
+            self.trace.add(
+                "sight",
+                json!({"kind": kind, "error": "the game sent no view"}),
+            );
             return Ok(("he can't see it".to_string(), Value::Null));
         };
         let choose = kind == "choose";
@@ -760,12 +929,19 @@ impl Brain {
             picture::mark(&mut view.rgb, view.width, view.height, &view.spots);
         }
         let png = picture::png(&view.rgb, view.width, view.height);
-        let file = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis().to_string();
+        let file = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .to_string();
         let views = self.cfg.base_dir.join("logs").join("views");
         let _ = std::fs::create_dir_all(&views);
         let _ = std::fs::write(views.join(format!("{file}.png")), &png);
 
-        let game = self.state()["game"].as_str().unwrap_or("a game").to_string();
+        let game = self.state()["game"]
+            .as_str()
+            .unwrap_or("a game")
+            .to_string();
         let eyes = format!("You're the eyes of {name}, {player}'s teammate in {game}: you're shown what {player} is looking at.");
         let (system, question) = if choose {
             (
@@ -779,20 +955,29 @@ impl Brain {
             )
         };
         let newest = self.memory.feed[self.memory.feed.len().saturating_sub(12)..].join("\n");
-        let question = format!("{}\n\nWhat's been happening, newest last:\n{newest}\n\n{question}", self.right_now());
+        let question = format!(
+            "{}\n\nWhat's been happening, newest last:\n{newest}\n\n{question}",
+            self.right_now()
+        );
         let mut request = json!({
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": ""}],
             "temperature": self.cfg.llm.temperature,
             "stream": false,
         });
-        let vision_model = self.cfg.llm.vision_model.as_deref()
+        let vision_model = self
+            .cfg
+            .llm
+            .vision_model
+            .as_deref()
             .filter(|name| !name.is_empty())
             .or(self.cfg.llm.model.as_deref());
         if let Some(model) = vision_model {
             request["model"] = json!(model);
         }
         if choose {
-            let spots: Vec<u64> = std::iter::once(0).chain(view.spots.iter().filter_map(|s| s["id"].as_u64())).collect();
+            let spots: Vec<u64> = std::iter::once(0)
+                .chain(view.spots.iter().filter_map(|s| s["id"].as_u64()))
+                .collect();
             request["response_format"] = json!({"type": "json_schema", "json_schema": {"name": "spot", "schema": {
                 "type": "object",
                 "properties": {"place": {"type": "string", "maxLength": 80}, "spot": {"type": "integer", "enum": spots}},
@@ -801,30 +986,52 @@ impl Brain {
         }
         // (the picture in the request, and as traced: by its file, not its data)
         let mut traced = request.clone();
-        for (request, url) in [(&mut request, format!("data:image/png;base64,{}", picture::base64(&png))), (&mut traced, format!("/view?name={file}"))] {
-            request["messages"][1]["content"] =
-                json!([{"type": "text", "text": question}, {"type": "image_url", "image_url": {"url": url}}]);
+        for (request, url) in [
+            (
+                &mut request,
+                format!("data:image/png;base64,{}", picture::base64(&png)),
+            ),
+            (&mut traced, format!("/view?name={file}")),
+        ] {
+            request["messages"][1]["content"] = json!([{"type": "text", "text": question}, {"type": "image_url", "image_url": {"url": url}}]);
         }
         let output = match self.agent.post(&self.cfg.llm.url).send_json(&request) {
-            Ok(response) => response.into_json::<Value>()?["choices"][0]["message"]["content"].as_str().unwrap_or_default().trim().to_string(),
+            Ok(response) => response.into_json::<Value>()?["choices"][0]["message"]["content"]
+                .as_str()
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
             Err(e) => {
                 let error = match e {
-                    ureq::Error::Status(code, response) => format!("{code}: {}", response.into_string().unwrap_or_default()),
+                    ureq::Error::Status(code, response) => {
+                        format!("{code}: {}", response.into_string().unwrap_or_default())
+                    }
                     other => other.to_string(),
                 };
                 eprintln!("[sight] {kind} failed: {error}");
-                self.trace.add("sight", json!({"kind": kind, "request": traced, "picture": file, "error": error}));
+                self.trace.add(
+                    "sight",
+                    json!({"kind": kind, "request": traced, "picture": file, "error": error}),
+                );
                 return Ok(("he can't see it".to_string(), json!(file)));
             }
         };
         let what = if choose {
             let answer: Value = serde_json::from_str(&output).unwrap_or_default();
             let spot = answer["spot"].as_u64().unwrap_or(0);
-            match view.spots.iter().find(|s| spot > 0 && s["id"].as_u64() == Some(spot)) {
+            match view
+                .spots
+                .iter()
+                .find(|s| spot > 0 && s["id"].as_u64() == Some(spot))
+            {
                 Some(found) => {
                     msg["option"] = json!(spot.to_string());
                     self.link.send_json(msg);
-                    format!("{} ({} m off)", answer["place"].as_str().unwrap_or("there").trim(), found["metres"])
+                    format!(
+                        "{} ({} m off)",
+                        answer["place"].as_str().unwrap_or("there").trim(),
+                        found["metres"]
+                    )
                 }
                 None => "none that fits".to_string(),
             }
@@ -844,15 +1051,28 @@ impl Brain {
                 "ms": start.elapsed().as_millis() as u64,
             }),
         );
-        println!("[sight] {kind}: {what} ({} ms)", start.elapsed().as_millis());
+        println!(
+            "[sight] {kind}: {what} ({} ms)",
+            start.elapsed().as_millis()
+        );
         Ok((what, json!(file)))
     }
 
     /// Asks Kev the questions about `input`; the call, what went in and came out, goes in `calls`.
-    fn kev(&self, purpose: &str, input: &str, questions: &Value, calls: &mut Vec<Value>) -> Result<Value> {
+    fn kev(
+        &self,
+        purpose: &str,
+        input: &str,
+        questions: &Value,
+        calls: &mut Vec<Value>,
+    ) -> Result<Value> {
         let start = Instant::now();
         let request = json!({"model": "kev-latest", "state": input, "questions": questions});
-        let resp: Value = self.agent.post(&self.cfg.kev.url).send_json(&request)?.into_json()?;
+        let resp: Value = self
+            .agent
+            .post(&self.cfg.kev.url)
+            .send_json(&request)?
+            .into_json()?;
         calls.push(json!({
             "purpose": purpose,
             "url": self.cfg.kev.url,
@@ -892,7 +1112,9 @@ impl Brain {
         let speak = |sentence: String, how: &str| {
             let sentence = sentence.trim().to_string();
             if !sentence.is_empty() {
-                let _ = self.speech.send(SpeechJob::Sentence(sentence, how.to_string(), generation));
+                let _ =
+                    self.speech
+                        .send(SpeechJob::Sentence(sentence, how.to_string(), generation));
             }
         };
         for line in BufReader::new(resp.into_reader()).lines() {
@@ -907,7 +1129,9 @@ impl Brain {
                     break;
                 }
             };
-            let Some(data) = line.strip_prefix("data: ") else { continue };
+            let Some(data) = line.strip_prefix("data: ") else {
+                continue;
+            };
             if data.trim() == "[DONE]" {
                 break;
             }
@@ -943,7 +1167,10 @@ impl Brain {
         let _ = self.speech.send(SpeechJob::End(generation));
         // (his turn as he wrote it, every note and paragraph: as the LLM sees its own lines)
         let line = full.trim().to_string();
-        println!("[llm] {name}: \"{line}\" ({} ms)", start.elapsed().as_millis());
+        println!(
+            "[llm] {name}: \"{line}\" ({} ms)",
+            start.elapsed().as_millis()
+        );
         self.trace.add(
             "llm",
             json!({
@@ -1004,12 +1231,25 @@ impl SentenceSplitter {
 /// The sounds the voice makes (Breeze TTS's four), by the ways the LLM writes them in a line:
 /// "(sighs)" is said as "(sigh)". Anything else in round brackets isn't said.
 const SOUNDS: [(&str, &str); 19] = [
-    ("laugh", "(laugh)"), ("laughs", "(laugh)"), ("laughing", "(laugh)"), ("laughter", "(laugh)"),
-    ("chuckle", "(laugh)"), ("chuckles", "(laugh)"), ("chuckling", "(laugh)"), ("giggles", "(laugh)"),
-    ("snickers", "(laugh)"), ("cackles", "(laugh)"),
-    ("sigh", "(sigh)"), ("sighs", "(sigh)"), ("sighing", "(sigh)"),
-    ("cough", "(cough)"), ("coughs", "(cough)"), ("coughing", "(cough)"),
-    ("clears throat", "(clears throat)"), ("clears his throat", "(clears throat)"), ("clearing throat", "(clears throat)"),
+    ("laugh", "(laugh)"),
+    ("laughs", "(laugh)"),
+    ("laughing", "(laugh)"),
+    ("laughter", "(laugh)"),
+    ("chuckle", "(laugh)"),
+    ("chuckles", "(laugh)"),
+    ("chuckling", "(laugh)"),
+    ("giggles", "(laugh)"),
+    ("snickers", "(laugh)"),
+    ("cackles", "(laugh)"),
+    ("sigh", "(sigh)"),
+    ("sighs", "(sigh)"),
+    ("sighing", "(sigh)"),
+    ("cough", "(cough)"),
+    ("coughs", "(cough)"),
+    ("coughing", "(cough)"),
+    ("clears throat", "(clears throat)"),
+    ("clears his throat", "(clears throat)"),
+    ("clearing throat", "(clears throat)"),
 ];
 
 /// A piece of the LLM's streamed line: what he says, or a "[how he says it]" note, which holds
@@ -1040,7 +1280,9 @@ impl Notes {
                 pieces.push(Piece::Text(self.buf[..open].to_string()));
                 self.buf.drain(..open);
             }
-            let Some(close) = self.buf.find(']') else { break };
+            let Some(close) = self.buf.find(']') else {
+                break;
+            };
             pieces.push(Piece::Note(self.buf[1..close].trim().to_string()));
             self.buf.drain(..=close);
         }
@@ -1059,7 +1301,10 @@ fn clean(text: &str) -> String {
         if depth == 0 && c == '(' {
             let sound = rest[1..].find(')').and_then(|end| {
                 let written = rest[1..1 + end].trim().to_lowercase();
-                SOUNDS.iter().find(|(as_written, _)| *as_written == written).map(|(_, said)| (said, end + 2))
+                SOUNDS
+                    .iter()
+                    .find(|(as_written, _)| *as_written == written)
+                    .map(|(_, said)| (said, end + 2))
             });
             if let Some((said, length)) = sound {
                 unbracketed.push_str(said);
@@ -1078,10 +1323,14 @@ fn clean(text: &str) -> String {
     let filtered: String = unbracketed
         .chars()
         .filter(|c| !matches!(c, '*' | '_' | '#' | '~' | '`'))
-        .filter(|&c| !(('\u{1F000}'..='\u{1FAFF}').contains(&c) || ('\u{2600}'..='\u{27BF}').contains(&c)))
+        .filter(|&c| {
+            !(('\u{1F000}'..='\u{1FAFF}').contains(&c) || ('\u{2600}'..='\u{27BF}').contains(&c))
+        })
         .collect();
     let collapsed = filtered.split_whitespace().collect::<Vec<_>>().join(" ");
-    let trimmed = collapsed.trim_matches(|c: char| c == '"' || c == '\u{201C}' || c == '\u{201D}').trim();
+    let trimmed = collapsed
+        .trim_matches(|c: char| c == '"' || c == '\u{201C}' || c == '\u{201D}')
+        .trim();
     if trimmed.chars().any(char::is_alphanumeric) {
         trimmed.to_string()
     } else {

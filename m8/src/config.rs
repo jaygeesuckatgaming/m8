@@ -111,7 +111,12 @@ pub struct MemoryConfig {
 
 impl Default for MemoryConfig {
     fn default() -> Self {
-        Self { url: None, enabled: true, source: halo_source(), flush_seconds: default_flush_seconds() }
+        Self {
+            url: None,
+            enabled: true,
+            source: halo_source(),
+            flush_seconds: default_flush_seconds(),
+        }
     }
 }
 
@@ -131,7 +136,10 @@ impl Config {
         let mut cfg: Config = toml::from_str(&text).context("parsing config")?;
         let base = path.parent().unwrap_or(Path::new("."));
         cfg.base_dir = base.to_path_buf();
-        for p in [&mut cfg.models.silero_vad, &mut cfg.mate.voice_reference].into_iter().chain(cfg.mate.persona.as_mut()) {
+        for p in [&mut cfg.models.silero_vad, &mut cfg.mate.voice_reference]
+            .into_iter()
+            .chain(cfg.mate.persona.as_mut())
+        {
             if p.is_relative() {
                 *p = base.join(&*p);
             }
@@ -143,7 +151,10 @@ impl Config {
 impl Config {
     /// The persona's folder (`persona`), else the config's.
     pub fn persona_dir(&self) -> PathBuf {
-        self.mate.persona.clone().unwrap_or_else(|| self.base_dir.clone())
+        self.mate
+            .persona
+            .clone()
+            .unwrap_or_else(|| self.base_dir.clone())
     }
 }
 
