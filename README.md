@@ -1,3 +1,4 @@
+This Fork is using my AI System - > https://github.com/jaygeesuckatgaming/Gem-System-v2
 # m8
 
 A voice brain for AI companions in games. You talk to your mate out loud; it hears the game,
