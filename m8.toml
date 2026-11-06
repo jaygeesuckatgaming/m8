@@ -30,8 +30,8 @@ model = "whisper-1"
 url = "http://127.0.0.1:5002/v1/systemone"
 
 [llm]
-# The LLM and eyes: Ollama, OpenAI-style.
-url = "http://192.168.137.129.:11434/v1/chat/completions"
+# The LLM and eyes: Ollama through the Gem system's logging proxy.
+url = "http://127.0.0.1:11433/v1/chat/completions"
 model = "gemma3-4b-ctx:latest"
 vision_model = ""
 temperature = 1.0
